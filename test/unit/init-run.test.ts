@@ -2,6 +2,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -361,4 +362,24 @@ describe("runInit preflight and non-destructive apply", () => {
       expect(await exists(join(root, ".distributor"))).toBe(false);
     });
   });
+
+  it.skipIf(process.platform === "win32")(
+    "refuses to create a project-local source through a symlinked parent",
+    async () => {
+      await useFixture(async (root) => {
+        const external = join(root, "external");
+        await mkdir(external);
+        await symlink(external, join(root, ".agents"), "dir");
+
+        await expect(runInit({ cwd: root, yes: true })).rejects.toMatchObject({
+          category: "filesystem",
+          exitCode: 1,
+          correction: expect.stringContaining("symbolic links"),
+        });
+        expect(await exists(join(external, "skills"))).toBe(false);
+        expect(await exists(join(root, "distributor.config.json"))).toBe(false);
+        expect(await exists(join(root, ".distributor"))).toBe(false);
+      });
+    },
+  );
 });

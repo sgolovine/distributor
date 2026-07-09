@@ -1,7 +1,7 @@
 import { isCancel, multiselect, text } from "@clack/prompts";
 import type { Stats } from "node:fs";
 import { lstat, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 
 import {
   adapterCatalog,
@@ -366,11 +366,57 @@ function applyFailure(
   });
 }
 
+async function assertRealProjectParents(
+  projectRoot: string,
+  targetPath: string,
+  operation: string,
+): Promise<void> {
+  const parentPath = dirname(targetPath);
+  if (
+    !pathsAreEquivalent(parentPath, projectRoot) &&
+    !isStrictChildPath(projectRoot, parentPath)
+  ) {
+    return;
+  }
+
+  const relativeParent = relative(projectRoot, parentPath);
+  const segments = relativeParent === "" ? [] : relativeParent.split(sep);
+  let current = projectRoot;
+
+  for (const segment of segments) {
+    current = join(current, segment);
+    const stats = await inspectPath(current, operation);
+    if (stats === undefined) {
+      return;
+    }
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new DistributorError(
+        "filesystem",
+        `Initialization parent is not a real directory: ${current}`,
+        {
+          operation,
+          context: { path: current, targetPath },
+          correction:
+            "Choose a path with real directory parents; Distributor will not write through symbolic links.",
+        },
+      );
+    }
+  }
+}
+
 async function applyInitPlan(plan: InitPlan): Promise<void> {
   if (plan.createSource) {
     try {
+      await assertRealProjectParents(
+        plan.projectRoot,
+        plan.sourceRoot,
+        "create init source",
+      );
       await mkdir(plan.sourceRoot, { recursive: true });
     } catch (error) {
+      if (error instanceof DistributorError) {
+        throw error;
+      }
       throw applyFailure(
         `Could not create the source directory: ${plan.sourceRoot}`,
         "create init source",
@@ -382,11 +428,19 @@ async function applyInitPlan(plan: InitPlan): Promise<void> {
 
   if (plan.configContents !== undefined) {
     try {
+      await assertRealProjectParents(
+        plan.projectRoot,
+        plan.configPath,
+        "create init config",
+      );
       await writeFile(plan.configPath, plan.configContents, {
         encoding: "utf8",
         flag: "wx",
       });
     } catch (error) {
+      if (error instanceof DistributorError) {
+        throw error;
+      }
       throw applyFailure(
         `Could not create Distributor config: ${plan.configPath}`,
         "create init config",
@@ -398,12 +452,25 @@ async function applyInitPlan(plan: InitPlan): Promise<void> {
 
   if (plan.createStateIgnore) {
     try {
+      await assertRealProjectParents(
+        plan.projectRoot,
+        plan.stateDirectory,
+        "create init state directory",
+      );
       await mkdir(plan.stateDirectory, { recursive: true });
+      await assertRealProjectParents(
+        plan.projectRoot,
+        plan.stateIgnorePath,
+        "create init ignore file",
+      );
       await writeFile(plan.stateIgnorePath, STATE_IGNORE_CONTENTS, {
         encoding: "utf8",
         flag: "wx",
       });
     } catch (error) {
+      if (error instanceof DistributorError) {
+        throw error;
+      }
       throw applyFailure(
         `Could not create Distributor state ignore file: ${plan.stateIgnorePath}`,
         "create init ignore file",
