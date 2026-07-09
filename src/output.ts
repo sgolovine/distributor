@@ -1,7 +1,12 @@
 import picocolors from "picocolors";
 
 import { DistributorError } from "./errors.js";
+import { displayPath } from "./filesystem/paths.js";
 import type { InitResult } from "./init/run-init.js";
+import type {
+  HarnessSyncCounts,
+  RunSyncResult,
+} from "./sync/run-sync.js";
 
 type Colors = ReturnType<typeof picocolors.createColors>;
 
@@ -18,6 +23,7 @@ export interface CliOutput {
   writeErr(text: string): void;
   printError(error: unknown): void;
   printInit(result: InitResult): void;
+  printSync(result: RunSyncResult): void;
 }
 
 function safeValue(value: unknown): string {
@@ -87,5 +93,86 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
         writeOut(`${outcome.artifact}: ${outcome.status} ${outcome.path}\n`);
       }
     },
+    printSync(result) {
+      writeOut(formatSyncHeading(result));
+
+      for (const harness of result.counts.harnesses) {
+        writeOut(formatHarnessSummary(result, harness));
+      }
+      writeOut(
+        `stale: ${result.counts.stale}, warnings: ${result.counts.warnings}, failures: ${result.counts.failures}\n`,
+      );
+
+      for (const warning of result.warnings) {
+        const location =
+          warning.path === undefined
+            ? ""
+            : `${formatDiagnosticPath(warning.path, result.projectRoot)}: `;
+        writeOut(colors.yellow(`Warning: ${location}${warning.message}\n`));
+      }
+      for (const failure of result.failures) {
+        writeErr(
+          colors.red(
+            `Error: ${formatDiagnosticPath(failure.path, result.projectRoot)}: ${failure.message}\nAction: ${failure.correction}\n`,
+          ),
+        );
+      }
+    },
   };
+}
+
+function formatSyncHeading(result: RunSyncResult): string {
+  const { skills, files } = result.counts.source;
+  const harnesses = result.counts.harnesses.length;
+  if (skills === 0) {
+    return `No skills found in ${result.sourceRoot}. Add a skill directory containing SKILL.md.\n`;
+  }
+
+  const skillLabel = skills === 1 ? "skill" : "skills";
+  const fileLabel = files === 1 ? "file" : "files";
+  const harnessLabel = harnesses === 1 ? "harness" : "harnesses";
+  if (result.dryRun) {
+    return `Dry run: ${skills} ${skillLabel} (${files} ${fileLabel}) would sync to ${harnesses} ${harnessLabel}.\n`;
+  }
+  if (result.exitCode === 1) {
+    return `Sync completed with failures for ${skills} ${skillLabel} (${files} ${fileLabel}) across ${harnesses} ${harnessLabel}.\n`;
+  }
+  return `Synced ${skills} ${skillLabel} (${files} ${fileLabel}) to ${harnesses} ${harnessLabel}.\n`;
+}
+
+function formatHarnessSummary(
+  result: RunSyncResult,
+  harness: HarnessSyncCounts,
+): string {
+  const satisfied = result.plan.satisfiedPlacements
+    .filter((placement) => placement.harnessId === harness.harnessId)
+    .map((placement) => displayPath(placement.sourceRoot, result.projectRoot))
+    .sort(compareText);
+  const operationText = result.dryRun
+    ? `${harness.operations.create} to create, ${harness.operations.update} to update, ${harness.operations.adopt} to adopt, ${harness.operations.skip} to skip`
+    : `${harness.operations.create} created, ${harness.operations.update} updated, ${harness.operations.adopt} adopted, ${harness.operations.skip} skipped`;
+
+  if (satisfied.length > 0 && harness.operations.total === 0) {
+    return `${harness.harnessId}: satisfied at ${satisfied.join(", ")} (no links needed)\n`;
+  }
+
+  const satisfiedText =
+    satisfied.length === 0 ? "" : `; satisfied at ${satisfied.join(", ")}`;
+  const staleText =
+    harness.operations.stale === 0
+      ? ""
+      : `, ${harness.operations.stale} stale`;
+  return `${harness.harnessId}: ${operationText}${staleText}${satisfiedText}\n`;
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function formatDiagnosticPath(path: string, projectRoot: string): string {
+  try {
+    return displayPath(path, projectRoot);
+  } catch {
+    return path;
+  }
 }
