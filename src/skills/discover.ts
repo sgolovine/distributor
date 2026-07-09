@@ -1,5 +1,5 @@
-import type { Stats } from "node:fs";
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { constants, type Stats } from "node:fs";
+import { lstat, open, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
 import { isMap, isScalar, parseDocument } from "yaml";
@@ -263,7 +263,7 @@ async function readFrontmatter(
 ): Promise<SkillFrontmatter | undefined> {
   let contents: string;
   try {
-    contents = await readFile(skillFilePath, "utf8");
+    contents = await readRegularSourceFile(skillFilePath);
   } catch (error) {
     problems.push({
       path: skillFilePath,
@@ -377,6 +377,36 @@ async function readFrontmatter(
   }
 
   return parsed.data;
+}
+
+async function readRegularSourceFile(path: string): Promise<string> {
+  const before = await lstat(path);
+  if (!before.isFile()) {
+    throw new Error("SKILL.md changed and is no longer a regular file.");
+  }
+
+  const noFollow = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
+  const handle = await open(path, constants.O_RDONLY | noFollow);
+  try {
+    const opened = await handle.stat();
+    const visible = await lstat(path);
+    if (!visible.isFile() || !sameFileIdentity(opened, visible)) {
+      throw new Error("SKILL.md changed while it was being opened.");
+    }
+
+    const contents = await handle.readFile({ encoding: "utf8" });
+    const after = await lstat(path);
+    if (!after.isFile() || !sameFileIdentity(opened, after)) {
+      throw new Error("SKILL.md changed while it was being read.");
+    }
+    return contents;
+  } finally {
+    await handle.close();
+  }
+}
+
+function sameFileIdentity(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 async function readDirectory(

@@ -124,6 +124,34 @@ describe("applySyncPlan target mutations", () => {
     });
   });
 
+  it("refuses a source file replaced by a symlink after planning", async () => {
+    await useFixture(async (root) => {
+      const fixture = await mappingFixture(root);
+      const loaded = loadedState(root, []);
+      const input = resolution(fixture.targetRoot, [fixture.mapping]);
+      const plan = await buildSyncPlan(input, loaded);
+      const outside = join(root, "outside.md");
+      await writeFile(outside, "outside", "utf8");
+      await rm(fixture.sourcePath);
+      await symlink(outside, fixture.sourcePath, "file");
+
+      const result = await applySyncPlan(plan, input, loaded, root);
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        targetLinkMutated: false,
+        failure: {
+          message: expect.stringContaining("Source file changed after planning"),
+          correction: expect.stringContaining("source symlinks"),
+        },
+      });
+      await expect(lstat(fixture.targetRoot)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(result.nextState.entries).toEqual([]);
+    });
+  });
+
   it("rejects a parent symlink that escapes after planning", async () => {
     await useFixture(async (root) => {
       const fixture = await mappingFixture(root);

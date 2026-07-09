@@ -345,6 +345,8 @@ async function applyOperation(
     await requireExactOwnership(operation, priorEntry, filesystem);
   }
 
+  await requireRegularSource(operation, filesystem);
+
   const placements = placementsForOperation(operation, resolution.placements);
   if (placements.length === 0) {
     throw new OperationFailure(
@@ -390,6 +392,34 @@ async function applyOperation(
         "A conflict operation cannot be applied.",
         "Resolve the conflict and rebuild the plan.",
       );
+  }
+}
+
+async function requireRegularSource(
+  operation: PlanOperation,
+  filesystem: ApplyFilesystem,
+): Promise<void> {
+  let stats: Stats;
+  try {
+    stats = await filesystem.lstat(operation.sourcePath);
+  } catch (error) {
+    throw new OperationFailure(
+      "target",
+      `Source file changed or disappeared after planning: ${operation.sourcePath}`,
+      "Restore a regular source file and rebuild the sync plan.",
+      { cause: error },
+    );
+  }
+
+  if (!stats.isFile()) {
+    const nodeType = stats.isSymbolicLink()
+      ? "a symbolic link"
+      : describeNode(stats);
+    throw new OperationFailure(
+      "target",
+      `Source file changed after planning and is now ${nodeType}: ${operation.sourcePath}`,
+      "Restore a regular source file; Distributor will not link through source symlinks.",
+    );
   }
 }
 
