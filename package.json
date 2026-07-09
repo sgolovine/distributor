@@ -1,26 +1,61 @@
 {
   "name": "distributor",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
+  "description": "Synchronize Agent Skills across supported agent harnesses.",
+  "type": "module",
   "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.10.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "distributor": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/set-bin-mode.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "smoke:cli": "pnpm build && node dist/bin.js --help",
+    "pack:check": "pnpm pack --dry-run"
+  },
+  "keywords": [
+    "agent-skills",
+    "cli"
+  ],
+  "author": "",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "^11.7.0",
+      "version": "11.10.0",
       "onFail": "download"
     }
   },
-  "type": "module",
-  "devDependencies": {
-    "tsx": "^4.23.0"
-  },
   "dependencies": {
-    "typescript": "^6.0.3"
+    "@clack/prompts": "^1.7.0",
+    "commander": "^15.0.0",
+    "cosmiconfig": "^9.0.2",
+    "picocolors": "^1.1.1",
+    "tsx": "^4.23.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }
