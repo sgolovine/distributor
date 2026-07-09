@@ -1,161 +1,343 @@
 # Distributor Specification
 
+## Status And Precedence
+
+This document defines the required behavior for Distributor's initial release.
+`CONFIG_SPEC.md` is authoritative for harness IDs, placement metadata, adapter
+availability, and placement sources. `TECH_STACK.md` is authoritative for
+implementation dependencies. If the documents conflict, behavior in this file
+takes precedence over implementation suggestions, while concrete harness paths
+in `CONFIG_SPEC.md` take precedence over examples in this file.
+
+Requirements that use **must** are acceptance criteria for the initial release.
+Requirements that use **may** are optional. Later-scope ideas are explicitly
+separated from initial-release requirements.
+
 ## Overview
 
-Distributor is a CLI tool for keeping agent skills synchronized across multiple
+Distributor is a CLI tool for keeping Agent Skills synchronized across multiple
 agent harnesses from one source of truth.
 
-Different agent harnesses, such as Codex, Claude Code, OpenCode, and future
-tools, expect skills to live in different folders and often package skill
-metadata in slightly different ways. Maintaining separate hand-written copies
-for each harness creates drift, stale instructions, and avoidable maintenance
-work.
-
-Distributor solves this by letting users maintain skills once, then run:
+Different harnesses may discover skills from different folders. Some already
+discover the shared `.agents/skills` location, while others require a
+harness-specific directory. Distributor reads one canonical skill tree, plans
+the minimum required target files, creates file-level symbolic links where a
+target is actually needed, and reports what changed.
 
 ```sh
 distributor sync
 ```
 
-The command discovers the canonical skill source, creates file-level symbolic
-links into the expected locations for each configured harness, and reports what
-changed.
-
-This document is the initial groundwork for the project. Details will be refined
-as target harness requirements, skill formats, and distribution policies are
-defined.
+Distributor must not create duplicate placements when a harness already
+discovers the configured source directory. That case is a successful,
+reportable no-op.
 
 ## Goals
 
-- Provide one source of truth for skills.
-- Sync skills into the correct folders for supported agent harnesses.
-- Minimize manual file copying and harness-specific maintenance.
-- Make harness target links predictable and inspectable.
-- Detect and prevent accidental overwrites of unmanaged user files.
-- Support incremental adoption in existing projects.
-- Keep the command simple enough for routine use by individual developers and
-  teams.
+- Provide one source of truth for standards-compliant Agent Skills.
+- Make the same skills discoverable by supported harnesses.
+- Avoid duplicate skill discovery when the source is already in a compatible
+  location.
+- Make target links predictable and inspectable.
+- Detect conflicts before writes and never overwrite unmanaged content.
+- Support existing projects without requiring a new source layout.
+- Behave deterministically on macOS, Linux, and Windows.
+- Give humans and automation actionable output and stable exit codes.
 
 ## Non-Goals
 
-- Distributor is not an agent harness.
-- Distributor does not execute skills.
-- Distributor does not validate every semantic detail of each harness.
-- Distributor does not replace harness-specific runtime behavior.
-- Distributor does not require every harness to support the exact same feature
-  set.
+- Distributor is not an agent harness and does not execute skill content.
+- Distributor does not install or configure an agent harness.
+- Distributor does not validate harness-specific runtime behavior.
+- Distributor does not make non-standard skill features portable.
+- Distributor does not copy files when symbolic links are unavailable.
+- The initial release does not transform skill content, overwrite conflicts,
+  remove stale targets, or auto-enable detected harnesses.
+
+## Initial Release Scope
+
+The initial release includes:
+
+- `help`, `version`, `init`, and `sync` commands.
+- `--help`, `--version`, `--harness`, and `--dry-run` flags.
+- Agent Skills as the canonical source format.
+- Codex CLI, Claude Code, and OpenCode adapters.
+- Project-scoped targets by default.
+- User-scoped targets only when explicitly selected in project configuration.
+- Direct, file-level symbolic links without content transformation.
+- Project-local managed-file state and stale-target reporting.
+
+Other harnesses in `CONFIG_SPEC.md` are roadmap candidates, not available
+adapters. A planned or blocked adapter must produce an unsupported-adapter error
+if named in project configuration.
 
 ## Terminology
 
-- **Source skill**: The canonical skill definition maintained by the project.
-- **Target skill**: A harness-specific placement of a source skill.
-- **Target file**: A file path in a harness target directory. By default this
-  is a symbolic link to a source file.
-- **Harness**: An agent environment that consumes skills, such as Codex, Claude
-  Code, or OpenCode.
-- **Adapter**: Distributor logic that maps source skills into a harness-specific
-  target format and folder.
-- **Sync**: The process of creating, updating, or removing target skills based
-  on the source of truth.
-- **Managed file**: A file or symbolic link created by Distributor and safe for
-  Distributor to update on later runs.
-- **Unmanaged file**: A file not known to be created by Distributor.
+- **Project root**: The directory containing the loaded Distributor project
+  configuration.
+- **Source root**: The configured directory containing canonical skills.
+- **Source skill**: One direct child directory of the source root containing a
+  standards-compliant `SKILL.md`.
+- **Target root**: A selected harness placement directory under which skills are
+  emitted.
+- **Target file**: A planned harness file path. In the initial release it is a
+  symbolic link to one source file.
+- **Placement**: A named, scoped directory a harness discovers, such as
+  `project` or `user`.
+- **Adapter**: Distributor logic and placement data for one harness.
+- **Managed file**: A target symlink recorded by Distributor whose current link
+  value still matches its recorded value.
+- **Unmanaged content**: Any target file, symlink, or directory that does not
+  satisfy the managed-file definition.
+- **Satisfied placement**: A source root that the harness already discovers, so
+  no target files are needed.
+- **Stale target**: A managed target whose source file or configured target is no
+  longer part of the current plan.
+- **Sync plan**: The deterministic set of create, update, adopt, skip, stale,
+  and conflict operations computed before writes begin.
 
-## CLI Scope
+## CLI Contract
 
-The initial public CLI should support:
+The executable name is `distributor`.
 
 ```sh
+distributor
 distributor help
 distributor version
-distributor sync
 distributor init
+distributor sync
 ```
+
+Global behavior:
+
+- `distributor` with no command must print the same help page as
+  `distributor help` and exit `0`.
+- `-h` and `--help` must print help for the current command and exit `0`.
+- `-V` and `--version` must print the package version followed by a newline and
+  exit `0` without loading project configuration.
+- `distributor version` must behave like `--version`.
+- Unknown commands, unknown flags, and missing flag values must print a concise
+  usage error and exit `2`.
+- Color and spinners must be disabled when stdout is not a TTY or when `NO_COLOR`
+  is set. Machine-readable output is later scope.
+
+Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The command completed successfully, including successful no-op and warning-only runs. |
+| `1` | Valid input was accepted, but an operational, conflict, or filesystem error prevented one or more requested operations from succeeding. |
+| `2` | The invocation or project configuration is invalid. |
+
+Exit `2` applies to CLI syntax, config discovery conflicts, config schema
+errors, unknown or unavailable adapters named by config, and a `--harness`
+value that is unknown or not enabled. Exit `1` applies to missing or invalid
+source content, path and target conflicts, invalid managed state, and apply-time
+filesystem failures.
 
 ### `distributor help`
 
-Print the CLI help page.
-
-Expected responsibilities:
-
-- Show available commands.
-- Show supported command flags.
-- Show short descriptions for each command.
-- Exit successfully without requiring project configuration.
+The help page must list commands, flags, short examples, and the three exit
+codes. It must not require project configuration.
 
 ### `distributor version`
 
-Print the Distributor version page.
-
-Expected responsibilities:
-
-- Show the current Distributor package version.
-- Exit successfully without requiring project configuration.
-
-### `distributor sync`
-
-Synchronize skills from the configured source of truth directory into configured
-target harness directories.
-
-Supported flags:
-
-- `--harness <harness>`: Sync only one configured harness target.
-
-Expected responsibilities:
-
-- Load project configuration.
-- Discover source skills.
-- Resolve enabled harness targets.
-- When `--harness` is provided, validate that the harness is supported and
-  enabled by the project configuration, then limit sync work to that harness.
-- Compare source skills to existing target files.
-- Create missing target directories when allowed by placement configuration.
-- Create or update file-level symbolic links from target paths to source files.
-- Skip unchanged files.
-- Warn or fail before replacing unmanaged files.
-- Print a concise summary of created, updated, skipped, removed, and failed
-  operations.
+The version command must read the installed package version rather than a
+second hard-coded value. It must not require project configuration.
 
 ### `distributor init`
 
-Set up Distributor in a project.
+```sh
+distributor init
+distributor init -y
+distributor init --yes
+```
+
+`init` sets up Distributor without running a sync.
+
+- The init root is the enclosing Git worktree root when one exists, otherwise
+  the current working directory.
+- Interactive init must prompt for the source path and enabled initial-release
+  harnesses. Its displayed defaults are `.agents/skills` and all three
+  initial-release adapters.
+- `-y` and `--yes` accept those displayed defaults without prompting.
+- A non-interactive invocation without `--yes` must fail with guidance to use
+  `--yes`.
+- Init must create the source directory when absent.
+- Init must fail without changing other files when the selected source path
+  exists but is not a directory.
+- Init must create `distributor.config.json` when no supported config exists.
+- Init must create `.distributor/.gitignore` containing `*` and `!.gitignore` so
+  local managed-file state is not committed accidentally.
+- Init must never overwrite an existing config or source content. `--yes` does
+  not weaken this rule.
+- If setup is already complete, init must report a successful no-op.
+
+The default generated configuration is:
+
+```json
+{
+  "source": ".agents/skills",
+  "harnesses": ["codex", "claude-code", "opencode"]
+}
+```
+
+### `distributor sync`
+
+```sh
+distributor sync
+distributor sync --harness claude-code
+distributor sync --dry-run
+```
 
 Supported flags:
 
-- `-y`: Accept all init defaults without prompting.
+- `--harness <harness-id>` limits the run to one harness that is both available
+  and enabled by project configuration. The flag may appear only once.
+- `--dry-run` performs the complete read, validation, resolution, conflict, and
+  diff-planning phases without creating directories, links, or state files.
 
-Expected responsibilities:
+Sync must:
 
-- Create placeholder folders required for the default source layout.
-- Create a project configuration file when one does not already exist.
-- Use conservative defaults suitable for a new project.
-- Prompt before overwriting or replacing existing project files unless `-y` is
-  provided and the operation is explicitly safe.
-- Print a concise summary of created, skipped, and failed init operations.
+1. Discover and validate project configuration.
+2. Discover and validate all source skills.
+3. Resolve requested adapters and placements.
+4. Treat already-discoverable source roots as satisfied placements.
+5. Load and validate managed-file state whenever it exists, including when the
+   current plan needs no target files.
+6. Build the complete sync plan and detect conflicts before writing.
+7. In a non-dry run, apply non-conflicting operations in deterministic order.
+8. Atomically record successful managed-file operations.
+9. Print a concise per-harness and total summary.
 
-Potential future commands:
+Configuration, source-validation, unsupported-adapter, and planning-conflict
+errors must abort the run before any target write. If a filesystem operation
+fails after apply begins, Distributor must continue with independent planned
+operations, record the operations that succeeded, and exit `1`.
 
-```sh
-distributor check
-distributor list
-distributor clean
-distributor doctor
+## Project Configuration
+
+### Discovery
+
+Supported filenames are:
+
+```text
+distributor.config.json
+distributor.config.js
+distributor.config.ts
 ```
 
-These are not required for the first implementation, but the architecture should
-not make them difficult to add.
+Starting at the current directory, Distributor must search parent directories
+for the nearest supported file. In a Git worktree, the search stops after the
+worktree root; outside Git, it stops at the filesystem root. The directory
+containing the selected file becomes the project root.
 
-## Source Of Truth
+If more than one supported filename exists in the same directory, loading must
+fail with a message that names every conflicting file. Distributor must not
+read configuration from `package.json` or unrelated cosmiconfig filenames.
 
-The default source of truth for agent skills lives in the project at:
+JavaScript and TypeScript configs are executable trusted code. Distributor must
+document that trust boundary in errors and help text; the promise not to execute
+skill content does not apply to a user-selected executable config file.
+
+### Schema
+
+The project configuration shape is intentionally singular. The initial release
+does not support an alternative object-map shorthand.
+
+```ts
+export type TargetSelection = {
+  /** Placement ID declared by the adapter. Defaults to its project placement. */
+  placement?: string;
+
+  /** Explicit target-root override. Relative paths use the project root. */
+  path?: string;
+};
+
+export type HarnessSelection =
+  | string
+  | {
+      name: string;
+      /** Defaults to one automatic project target. */
+      targets?: TargetSelection[];
+    };
+
+export type DistributorConfig = {
+  /** Relative paths use the project root. Defaults to ".agents/skills". */
+  source?: string;
+
+  /** At least one unique, available harness ID is required. */
+  harnesses: HarnessSelection[];
+};
+```
+
+A string harness entry selects one automatic project target. An object entry
+may select one or more explicit project or user placements. User scope requires
+the object form and must never be selected through environment detection alone.
+Admin, system, plugin, package, and configured scopes are rejected in the
+initial release even if the adapter documents them for discovery.
+
+Expanded JSON example:
+
+```json
+{
+  "source": ".agents/skills",
+  "harnesses": [
+    "codex",
+    {
+      "name": "claude-code",
+      "targets": [
+        {
+          "placement": "project",
+          "path": ".custom/claude-skills"
+        }
+      ]
+    }
+  ]
+}
+```
+
+TypeScript example:
+
+```ts
+import type { DistributorConfig } from "distributor";
+
+const config = {
+  source: ".agents/skills",
+  harnesses: ["codex", "claude-code", "opencode"],
+} satisfies DistributorConfig;
+
+export default config;
+```
+
+The runtime Zod schema is authoritative. `DistributorConfig` must be inferred
+from that schema rather than maintained separately. Validation must reject:
+
+- unknown top-level and nested fields;
+- an empty `harnesses` array;
+- duplicate harness IDs;
+- unavailable or unknown harness IDs;
+- a present but empty `targets` array;
+- duplicate target selections for one harness;
+- unknown placement IDs;
+- placement IDs outside project or user scope;
+- empty paths and unresolved path variables.
+
+Errors must identify the config file, field path, received value when safe and
+useful, expected shape, and a concrete correction.
+
+## Canonical Source Format
+
+The canonical format is the open [Agent Skills
+specification](https://agentskills.io/specification), not a
+Distributor-specific superset. Distributor preserves all source files and does
+not rewrite frontmatter in the initial release.
+
+The default source root is:
 
 ```text
 .agents/skills
 ```
-
-When the user runs `distributor sync`, Distributor reads skills from the project
-configuration `source` path, defaulting to `.agents/skills`, and syncs their
-files into each configured harness-specific placement.
 
 Canonical structure:
 
@@ -166,547 +348,352 @@ Canonical structure:
       SKILL.md
       assets/
       references/
+      scripts/
 ```
 
-Minimal valid source tree:
+Source-root rules:
 
-```text
-.agents/
-  skills/
-    skill-name/
-      SKILL.md
-```
+- A missing source root or a source path that is not a directory is an error.
+- An empty source root is a successful no-op with guidance to add a skill.
+- Each non-hidden direct child directory is one source skill and must contain a
+  regular file named exactly `SKILL.md`.
+- `.gitkeep` and hidden entries directly under the source root are ignored.
+- Any other regular file directly under the source root produces a warning and
+  is ignored.
+- Every regular file recursively contained by a valid skill is part of that
+  skill, including hidden files inside the skill directory.
+- Empty directories have no emitted target representation.
+- A symlink encountered as a non-hidden direct child of the source root or
+  anywhere while traversing a skill is rejected. Hidden entries directly under
+  the source root remain ignored without being traversed. This prevents source
+  traversal and ambiguous link chains in the initial release.
 
-Each direct child directory of the configured source folder is treated as one
-source skill:
+Distributor must validate the standard's structural and required frontmatter
+rules before planning writes. `SKILL.md` must begin with a YAML mapping between
+`---` delimiters. `name` and `description` are required strings. `name` must be
+1-64 characters, match `^[a-z0-9]+(-[a-z0-9]+)*$`, and exactly match the parent
+directory. `description` must contain 1-1024 characters. Distributor must also
+validate the types and length limits of optional fields defined by the Agent
+Skills specification. Unknown frontmatter keys must be preserved and may
+produce adapter-specific portability warnings, but they are not a generic
+validation error.
 
-```text
-.agents/skills/
-  skill-name/
-    SKILL.md
-  another-skill/
-    SKILL.md
-```
+If any source skill is invalid, the complete sync must fail before target
+writes. The error must name the skill path and each validation problem.
 
-Initial assumptions:
+## Harnesses And Adapters
 
-- Each source skill lives in its own directory under the configured source
-  folder.
-- `SKILL.md` is the primary instruction document.
-- Additional files under the skill directory are part of the skill unless
-  excluded by configuration.
-- Skill directory names are stable IDs unless explicit metadata overrides them.
-- Source skills should remain harness-neutral where possible.
-- Distributor should fail with a clear error if the configured source folder
-  does not exist or contains no valid source skills.
+Stable harness IDs and adapter availability are defined in `CONFIG_SPEC.md`.
+Initial-release IDs are:
 
-Open decision:
+| Harness ID | Display name | Initial behavior with the default source |
+| --- | --- | --- |
+| `codex` | Codex CLI | Satisfied in place because Codex discovers `.agents/skills`. |
+| `claude-code` | Claude Code | Links into `.claude/skills` by default. |
+| `opencode` | OpenCode | Satisfied in place because OpenCode discovers `.agents/skills`. |
 
-- Whether the canonical skill format should exactly match one existing harness
-  format, or be a Distributor-specific superset that adapters render into each
-  harness.
+Each available adapter must:
 
-## Target Harnesses
+- have one `<harness-id>.config.ts` module conforming to `CONFIG_SPEC.md`;
+- declare every placement used for discovery or output;
+- declare a default project placement;
+- identify compatible project placements, including `.agents/skills` when the
+  harness supports it;
+- map every source file to at most one path per selected target root;
+- preserve the source-relative path for initial-release direct-link adapters;
+- expose warnings for known unsupported or non-portable fields;
+- contain no hard-coded target directories outside its configuration module.
 
-Distributor should support multiple harnesses through adapters.
+## Placement Resolution
 
-Target harnesses are limited to harnesses with native Agent Skills support. The
-authoritative harness set is the `Skill Placement Matrix` in
-`CONFIG_SPEC.md`; this section mirrors that list for the product spec.
+Paths are resolved without changing the process working directory.
 
-1. OpenCode
-2. Claude Code
-3. Cursor
-4. Gemini CLI
-5. Antigravity
-6. Codex CLI
-7. GitHub Copilot
-8. OpenHands
-9. Pi
-10. Cline
-11. Goose
-12. Crush
-13. Qwen Code
-14. Kilo Code
-15. Roo Code
-16. Trae Agent
+- Relative config paths are resolved from the project root.
+- `~` expands to the current user's home directory.
+- Adapter-declared variables such as `$HOME` and `$PROJECT_ROOT` are expanded
+  explicitly. An undefined referenced variable is an error.
+- All paths are normalized to absolute paths for comparison, while user-facing
+  diagnostics prefer project-relative paths when possible.
 
-This list is a supported adapter target set, not a broader coding-agent market
-backlog. Harnesses that only support adjacent concepts such as rules, custom
-instructions, recipes, prompts, or convention files are excluded until they
-expose native `SKILL.md` discovery or Distributor defines a separate transform
-surface for those item types. Harnesses with unverified path details may appear
-in this list, but their adapters must remain disabled until `CONFIG_SPEC.md`
-contains a verified placement.
+For a string harness selection or an object without `targets`, resolution is:
 
-Each adapter must define:
+1. If the source root exactly matches any project-scoped placement the adapter
+   declares as `native` or `compatibility`, mark the harness satisfied and plan
+   no links.
+2. Otherwise, select the adapter's declared default project placement.
 
-- A harness configuration file named `<harness_name>.config.ts`.
-- The target locations where that harness expects skill files to be placed.
-- How to detect or override those target locations.
-- Which source files are linked directly.
-- Which source files are transformed.
-- Any required metadata files.
-- Any unsupported source features.
-- How managed files are marked or identified.
+For each explicit target selection, resolution is:
 
-Adapters should be isolated so adding a new harness does not require rewriting
-the sync engine.
+1. Use `path` when provided.
+2. Otherwise select the named `placement`, or the adapter's default project
+   placement when `placement` is omitted.
+3. Apply an environment-variable override only when that selected placement
+   explicitly declares one. Environment variables must not select a broader
+   scope implicitly.
+4. Fall back to the placement's declared default path.
 
-## Configuration
+Additional safety rules:
 
-Distributor should support project-level configuration for user choices and
-harness-level configuration for adapter placement rules.
-
-### Project Configuration
-
-Projects that use Distributor must define an app configuration file at the
-project root. The file tells Distributor where the canonical skills folder lives
-and which harnesses are supported by the project. `distributor sync` should fail
-with a clear error if no supported project configuration file is found.
-
-Supported filenames:
-
-```text
-distributor.config.js
-distributor.config.ts
-distributor.config.json
-```
-
-No other project configuration filenames are supported initially.
-
-The project configuration must support:
-
-- `source`: Optional path to the canonical skills folder. Defaults to
-  `.agents/skills`.
-- `harnesses`: Required list or object describing the harnesses supported by the
-  project.
-- Per-harness placement overrides when a project needs to link a supported
-  harness item somewhere other than the harness default.
-
-Minimal JSON example:
-
-```json
-{
-  "harnesses": ["codex", "claude-code"]
-}
-```
-
-Expanded JSON example:
-
-```json
-{
-  "source": ".agents/skills",
-  "harnesses": {
-    "codex": {
-      "placements": {
-        "skills": ".codex/skills"
-      }
-    },
-    "claude-code": true,
-    "opencode": false
-  }
-}
-```
-
-TypeScript example:
-
-```ts
-import type { DistributorConfig } from "distributor";
-
-const config: DistributorConfig = {
-  source: ".agents/skills",
-  harnesses: {
-    codex: {
-      placements: {
-        skills: ".codex/skills"
-      }
-    },
-    "claude-code": true
-  }
-};
-
-export default config;
-```
-
-Distributor must validate loaded project configuration with Zod before using it.
-Validation errors should identify the config file path, invalid field, received
-value when useful, and expected shape.
-
-The implementation should expose a TypeScript type inferred from the Zod schema
-so the runtime validator and compile-time `DistributorConfig` type stay aligned.
-
-### Harness Configuration
-
-Every harness must have one consistent configuration module that defines where
-items for that harness should be placed. Harness configurations must be stored
-as:
-
-```text
-<harness_name>.config.ts
-```
-
-Examples:
-
-```text
-codex.config.ts
-claude-code.config.ts
-opencode.config.ts
-```
-
-Harness configuration modules should use a shared TypeScript type so adapters
-describe placement in a consistent, testable shape.
-
-Initial interface:
-
-```ts
-export type HarnessPlacement = {
-  /**
-   * Harness-relative logical name for the placed item.
-   * Examples: "skills", "commands", "rules", "memory".
-   */
-  item: string;
-
-  /**
-   * Default directory where this item should be linked when no user override is
-   * provided.
-   */
-  defaultPath: string;
-
-  /**
-   * Optional environment variables that can override or help discover the path.
-   */
-  environmentVariables?: string[];
-
-  /**
-   * Whether Distributor may create the directory when it is missing.
-   */
-  createIfMissing?: boolean;
-};
-
-export type HarnessConfig = {
-  /**
-   * Stable harness ID used by project configuration and reports.
-   */
-  name: string;
-
-  /**
-   * Human-readable harness name.
-   */
-  displayName: string;
-
-  /**
-   * All output locations owned by this harness adapter.
-   */
-  placements: HarnessPlacement[];
-};
-```
-
-Example harness configuration:
-
-```ts
-import type { HarnessConfig } from "./types";
-
-const config: HarnessConfig = {
-  name: "codex",
-  displayName: "Codex CLI",
-  placements: [
-    {
-      item: "skills",
-      defaultPath: "~/.codex/skills",
-      environmentVariables: ["CODEX_HOME"],
-      createIfMissing: true
-    }
-  ]
-};
-
-export default config;
-```
-
-Adapters must read their placement rules from their harness configuration file
-rather than hard-coding target directories in transformation logic.
-
-Configuration should eventually support:
-
-- Source directory through the `source` project config field.
-- Supported harnesses through the `harnesses` project config field.
-- Target placement overrides keyed by harness and placement item.
-- Include and exclude patterns.
-- Dry-run behavior.
-- Conflict policy.
-- Cleanup policy for removed source skills.
-
-## Target Directory Resolution
-
-Target directories are resolved from harness placement configuration.
-
-Each harness must define every placement item it supports in its
-`<harness_name>.config.ts` file. For example, a harness that supports skills and
-commands should define separate placements for `skills` and `commands` rather
-than burying those paths inside adapter code.
-
-Resolved placement paths may come from:
-
-- Explicit project-level configuration.
-- Harness-specific environment variables.
-- Well-known default paths declared by the harness configuration.
-- Project-local folders.
-
-The exact order must be defined per adapter. Explicit configuration should take
-precedence over auto-detection.
-
-Distributor should avoid creating links outside expected skill directories unless
-the user explicitly configures a target path.
+- A target root equal to the source root is a satisfied placement, never a
+  self-link plan.
+- A target root strictly inside the source root is invalid because it could make
+  discovery recursive.
+- An output path outside expected adapter directories is allowed only through an
+  explicit project-config `path`.
+- A plan that links a project-local source into a target outside the project
+  root must warn that moving or deleting the project will break that target.
+- If multiple harnesses plan an identical target/source mapping, the filesystem
+  operation is deduplicated and attributed to each harness in the report.
+- If two planned mappings would write different sources to one target path,
+  planning fails before writes.
 
 ## Sync Semantics
 
-`distributor sync` should be deterministic:
+The same source tree, configuration, adapter data, environment, and managed
+state must produce the same ordered plan.
 
-- The same inputs and configuration should produce the same target files.
-- Unchanged source skills should not recreate target links unnecessarily.
-- Target output should be stable across platforms where possible.
+Planning order is lexicographic by harness ID, placement ID, skill name, and
+target path. Filesystem enumeration order and project-config object insertion
+order must not affect output.
 
-For each source file emitted by an adapter, Distributor should decide whether to:
+For every planned target file, Distributor must choose exactly one operation:
 
-- Create the parent target directory when it is missing and the placement allows
-  directory creation.
-- Create a symbolic link when the target path is missing.
-- Update a managed symbolic link when it points to a stale source path.
-- Skip a symbolic link when it already points to the expected source file.
-- Remove a managed symbolic link when the source file was removed and cleanup is
-  enabled.
-- Fail or warn when a target path contains unmanaged content.
+- **create**: target is absent;
+- **update**: target is managed and its recorded source mapping is stale;
+- **adopt**: target is an unrecorded symlink that already has the exact expected
+  link value or resolves to the exact expected source file;
+- **skip**: target is managed and already correct;
+- **conflict**: target contains unmanaged or modified content.
 
-Default behavior should be conservative:
+Separately, every prior managed target in the state scope that is absent from
+the current plan is classified as **stale**. A full sync evaluates all state
+entries. A `--harness` sync evaluates stale entries only for the selected
+harness and leaves other entries unchanged.
 
-- Do not delete target skills unless cleanup is explicitly enabled.
-- Do not overwrite unmanaged target files without an explicit policy.
-- Prefer clear errors over silent data loss.
+Adoption is safe because it changes only state; it does not replace the existing
+symlink. Stale targets are reported but not removed in the initial release.
 
-### Symbolic Link Behavior
+The planner must inspect all requested harnesses before apply begins. Any
+conflict makes the plan non-applicable and exits `1` without target or state
+writes, including when only one harness conflicts.
 
-`distributor sync` must create links at the file level, not by linking whole
-skill directories. A source skill may contain `SKILL.md`, assets, references, or
-other files, and each emitted target file must have its own target symlink. This
-keeps adapters free to place different files in different harness-specific
-locations instead of assuming every harness stores an entire skill under
-`.<harness_config_dir>/skills`.
+### File-Level Symbolic Links
 
-Example source tree:
+Distributor must link files, not whole skill directories.
 
 ```text
 .agents/skills/review/SKILL.md
 .agents/skills/review/references/checklist.md
 ```
 
-Example target tree:
+may produce:
 
 ```text
 .claude/skills/review/SKILL.md -> ../../../.agents/skills/review/SKILL.md
 .claude/skills/review/references/checklist.md -> ../../../../.agents/skills/review/references/checklist.md
 ```
 
-Adapters are responsible for mapping each source file to a target file path. The
-sync engine is responsible for creating the target parent directories and the
-symbolic links described by that plan.
+Requirements:
 
-Directory handling requirements:
+- The adapter maps source-relative file paths to target-relative file paths.
+- The sync engine creates missing parent directories only when
+  `createIfMissing` is true for the selected placement.
+- If a required parent is absent and creation is disallowed, planning fails.
+- A directory at an intended target-file path is always a conflict.
+- A regular file at an intended target-file path is always a conflict in the
+  initial release.
+- A symlink may be changed only when it is managed and unchanged since the last
+  recorded sync.
+- Broken symlinks must be inspected as symlinks, not treated as absent files.
+- Links between paths that are both inside the project root use relative link
+  values so the checkout remains movable.
+- A link with either endpoint outside the project root uses an absolute source
+  value to avoid dependence on an external directory layout.
+- Distributor never creates directory symlinks or junctions.
 
-- If a target parent directory does not exist and `createIfMissing` is `true`
-  for the placement, Distributor must create it before creating the symlink.
-- If a target parent directory does not exist and `createIfMissing` is `false`
-  or omitted, Distributor must fail with a clear error for that target file.
-- If Distributor attempts to create a symlink at a target path and a directory
-  already exists at that exact path, Distributor must fail. It must not replace,
-  merge into, or delete the directory.
-- If Distributor attempts to create a symlink at a target path and a regular
-  file already exists there, Distributor must fail unless the file is known to be
-  managed by Distributor and the configured conflict policy allows replacement.
-- If Distributor attempts to create a symlink at a target path and a symlink
-  already exists there, Distributor may update it only when it is known to be
-  managed by Distributor or already points to the expected source file.
+On macOS and Linux, Distributor uses POSIX file symlinks. On Windows it uses the
+Node.js `file` symlink type. If Windows privileges or Developer Mode do not allow
+file symlinks, Distributor must fail with an actionable message and must not
+copy files or create junctions.
 
-Platform requirements:
+### Managed-File State
 
-- On macOS and Linux, Distributor should use POSIX symbolic links for target
-  files. Links should use relative targets when both paths are on the same
-  filesystem subtree so checked-out projects remain movable.
-- On Windows, Distributor should create file symbolic links when supported by
-  the current OS and user privileges. The implementation should use the
-  Node.js-compatible `file` symlink type for files, not the `junction` type.
-- On Windows, if file symlink creation fails because Developer Mode or the
-  required privileges are unavailable, Distributor must fail with an actionable
-  error explaining that file symlink support is required. It must not silently
-  fall back to copying files.
-- Distributor must never create directory symlinks or junctions for source skill
-  directories as part of `distributor sync`.
+Managed state is stored at:
 
-## Managed File Tracking
+```text
+<project-root>/.distributor/state.json
+```
 
-Distributor needs a way to know which files it owns.
+The state file is local implementation state and must not be required in version
+control. It contains a schema version plus, for every managed target:
 
-Possible approaches:
+- harness IDs and placement ID;
+- normalized source and target paths;
+- the exact recorded symlink value.
 
-- Track managed file symlinks in a manifest.
-- Write a manifest in the target directory.
-- Maintain a project-local state file.
-- Use checksums embedded in a manifest.
+Paths inside the project root must be serialized project-relative; external
+paths must be serialized absolute. State entries and emitted JSON keys must be
+sorted deterministically.
 
-The first implementation should choose a strategy that is reliable across
-multi-file skills, distinguishes managed symlinks from user-authored files, and
-does not require mutating source content.
+Ownership and tamper rules:
 
-Open decision:
+- A state entry grants ownership only when the target is still a symlink and its
+  current raw link value matches the recorded value.
+- If a recorded target was replaced or its link value changed, it becomes a
+  conflict and Distributor must not restore it automatically.
+- When state is absent, an exact expected symlink may be adopted; every other
+  existing target is unmanaged.
+- Invalid JSON, an unknown state schema version, or duplicate target entries is
+  a planning error with recovery guidance. Distributor must not discard corrupt
+  state automatically.
+- State must be written to a temporary file and atomically renamed after target
+  operations. It must include only successful or still-valid managed mappings.
+- Before writing state, Distributor must create `.distributor/.gitignore` with
+  the init-defined contents when it is absent. It must not replace an existing
+  `.gitignore`; an existing file that does not ignore `state.json` produces a
+  warning.
+- Dry run must not create or repair the state directory or file.
 
-- Whether Distributor should use a target-local manifest, a project-local state
-  file, or both to identify managed symlinks.
+### Stale Targets And Cleanup
+
+A target becomes stale when its source file disappears, its harness is removed
+from config, or placement resolution changes. Initial-release sync must report
+stale managed targets and leave them untouched.
+
+Automatic cleanup and a future `--clean` flag may remove only targets that still
+satisfy the managed ownership and tamper checks. Cleanup is not an
+initial-release requirement.
 
 ## Transformation Model
 
-Most harnesses should receive direct symbolic links to source files. Others may
-need transformed frontmatter, renamed files, generated metadata, or filtered
-content.
+Initial-release adapters must produce direct source-to-target link mappings only.
+They must not rewrite frontmatter, rename `SKILL.md`, generate metadata, or copy
+content. If a harness cannot consume the canonical source without a transform,
+its adapter remains unavailable.
 
-Adapters should expose a small transformation interface:
+A later transform API may produce generated files, but generated artifacts must
+use the same planning, conflict, state, dry-run, and stale-target rules. That API
+is not required by the initial architecture beyond keeping adapter planning
+separate from filesystem application.
 
-- Read canonical skill input.
-- Produce a list of source-file-to-target-file links.
-- Produce warnings for unsupported features.
-- Produce metadata needed for managed-file tracking.
+## Errors And Diagnostics
 
-Transformations should be explicit and testable. Avoid adapter behavior that
-depends on hidden global state.
+Errors must identify, when applicable:
 
-When an adapter must transform content, the transformed artifact is no longer a
-direct symlink to the original source file. That behavior must be explicit in the
-adapter plan and must still follow the same conflict and managed-file tracking
-rules.
+- the project config path and field;
+- the source skill;
+- the harness and placement;
+- the source and target paths;
+- the failed operation;
+- the next safe action.
 
-## Error Handling
+Required error cases include:
 
-Distributor should produce actionable errors.
+- missing or invalid project configuration;
+- missing source root or malformed source skill;
+- unknown, unavailable, or disabled harness;
+- unknown placement or invalid path expansion;
+- recursive or colliding target paths;
+- unmanaged or modified target content;
+- a target-file path occupied by a directory;
+- target parent creation disallowed or failed;
+- corrupt or incompatible managed state;
+- unavailable file symlink support.
 
-Examples:
-
-- Missing source directory.
-- Invalid configuration.
-- Unknown harness name.
-- Target directory cannot be created.
-- Target path is a directory where a symlink should be created.
-- Target file exists but is unmanaged.
-- File symlink creation is unavailable on the current platform.
-- Source skill is malformed.
-- Adapter cannot represent a source feature.
-
-Errors should identify:
-
-- The affected skill.
-- The affected harness.
-- The file path involved.
-- The recommended next action when obvious.
+Diagnostics must never suggest deleting or overwriting a path unless the message
+also explains why Distributor considers it unmanaged. The initial release does
+not offer a force flag.
 
 ## Output
 
-The default output should be concise and suitable for humans.
+Human output must distinguish skill counts from file-operation counts. Per-file
+details are printed only for warnings and errors in the initial release.
 
 Example:
 
 ```text
-Synced 8 skills to 2 harnesses.
+Synced 8 skills (23 files) to 3 harnesses.
 
-Codex: 3 created, 5 updated, 0 skipped
-Claude Code: 2 created, 6 updated, 0 skipped
-Warnings: 1
+claude-code: 23 created, 0 updated, 0 adopted, 0 skipped
+codex: satisfied at .agents/skills (no links needed)
+opencode: satisfied at .agents/skills (no links needed)
+stale: 0, warnings: 0, failures: 0
 ```
 
-Verbose output may later include per-file operations.
-
-Machine-readable output, such as JSON, can be considered after the core workflow
-is stable.
-
-## Dry Run
-
-A dry-run mode should be supported, either in the first implementation or soon
-after:
-
-```sh
-distributor sync --dry-run
-```
-
-Dry run should perform discovery, resolution, validation, and diff planning
-without writing files.
-
-## Cleanup
-
-When a source skill is removed, old target skills may become stale.
-
-Initial default:
-
-- Do not delete target skills automatically.
-- Report stale managed target skills if they can be detected.
-
-Possible future flag:
-
-```sh
-distributor sync --clean
-```
-
-Cleanup must only remove files known to be managed by Distributor.
-
-## Cross-Platform Requirements
-
-Distributor should work on:
-
-- macOS
-- Linux
-- Windows
-
-Path handling must use platform-aware APIs. Tests should avoid assuming POSIX
-path separators except where harnesses require POSIX-like paths.
-
-## Testing Strategy
-
-The implementation should include focused tests for:
-
-- Config loading.
-- Source skill discovery.
-- Harness adapter output.
-- Target path resolution.
-- Managed-file conflict detection.
-- File-level symlink creation.
-- Directory collision failures when a symlink target path is already a
-  directory.
-- Windows symlink failure handling when file symlink privileges are unavailable.
-- Sync plan generation.
-- Dry-run behavior.
-- Cleanup behavior once implemented.
-
-Adapter tests should use fixture directories for source skills and expected
-target output.
+Dry run must use future tense or a clear `Dry run` label and report the same plan
+counts without claiming files were changed. Empty-source sync must say that no
+skills were found and exit `0`.
 
 ## Security And Safety
 
-Distributor creates links in user and project directories, so safety matters.
+Distributor writes links into project and explicitly selected user directories.
+It must:
 
-Requirements:
+- never execute or import source skill content;
+- treat JavaScript and TypeScript config as trusted executable configuration;
+- use `lstat`-style inspection so broken or unsafe target symlinks are visible;
+- reject source symlinks and source-relative traversal;
+- validate skill names before using them in target paths;
+- normalize paths before containment and collision checks;
+- prevent writes through symlinked target parent directories that escape the
+  resolved target root;
+- avoid time-of-check/time-of-use replacement where platform APIs permit;
+- never overwrite unmanaged or user-modified content;
+- never broaden from project scope to user, admin, or system scope implicitly;
+- keep dry run strictly read-only.
 
-- Never execute source skill content.
-- Normalize and validate configured paths.
-- Prevent path traversal from skill names or source file paths.
-- Avoid overwriting unmanaged files by default.
-- Avoid following unsafe symlinks when validating or replacing existing targets.
-- Keep target links deterministic and reviewable.
+## Testing Strategy
 
-## Open Questions
+Tests use isolated temporary directories and platform-aware path assertions.
+Required coverage:
 
-- What exact source skill format should Distributor own?
-- Which harness should be supported first?
-- What are the precise target directories and file formats for Codex, Claude
-  Code, and OpenCode?
-- Should Distributor sync global user skills, project-local skills, or both?
-- Should target harnesses be enabled automatically when detected?
-- How should per-harness skill content differences be represented?
-- Should source skills support frontmatter?
-- Should the CLI be distributed as an npm package, standalone binary, or both?
-- What should the default conflict policy be?
-- What should the default cleanup policy be?
+- config discovery, precedence, executable-config loading, and Zod errors;
+- source discovery and Agent Skills frontmatter validation;
+- empty sources, hidden root entries, and rejected source symlinks;
+- adapter availability and placement resolution;
+- already-discoverable source no-ops and self-link prevention;
+- deterministic plan ordering and duplicate-operation deduplication;
+- target creation, exact-link adoption, skip, update, and conflict behavior;
+- state ownership, tamper detection, corrupt state, and atomic state writes;
+- stale-target reporting without deletion;
+- dry run producing no filesystem writes;
+- directory collisions and symlinked-parent escape attempts;
+- relative project links and absolute external links;
+- Windows file-symlink privilege failures without copy fallback;
+- help, version, non-TTY output, and exit codes;
+- init defaults, non-interactive behavior, and no-overwrite behavior.
+
+Tests for Windows-specific behavior may mock the failing Node.js symlink call on
+non-Windows CI, but at least one Windows CI job must exercise real path and
+symlink behavior when the repository begins shipping releases.
+
+## Initial Release Acceptance Criteria
+
+The initial release is complete only when all of the following are demonstrated
+by automated tests:
+
+1. `init --yes` creates a valid, non-destructive default setup.
+2. Syncing an empty initialized source is a successful no-op.
+3. A valid multi-file skill is linked into Claude Code with preserved relative
+   structure.
+4. The same default source is reported as already satisfied for Codex and
+   OpenCode without creating duplicate placements.
+5. A second identical sync performs no target writes.
+6. An unmanaged file, directory, changed symlink, or unsafe parent prevents all
+   planned writes.
+7. Dry run reports the same applicable plan as sync and changes no filesystem
+   metadata or content.
+8. Removing a source file reports its prior managed target as stale without
+   deleting it.
+9. Invalid config, invalid skills, unavailable adapters, and Windows symlink
+   limitations produce the specified exit code and actionable error.
+10. The examples and shared types in all three spec files agree.
+
+## Later Scope
+
+Later releases may add roadmap adapters, transformed artifacts, include/exclude
+patterns, machine-readable output, explicit conflict-resolution workflows,
+managed cleanup, skill package/plugin distribution, and additional config
+formats.
+None of these may weaken the initial release's ownership, conflict, scope, or
+dry-run guarantees.
