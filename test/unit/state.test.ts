@@ -1,4 +1,12 @@
-import { mkdir, readlink, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -7,6 +15,7 @@ import { DistributorError } from "../../src/errors.js";
 import {
   evaluateManagedState,
   loadManagedState,
+  persistManagedState,
   serializeManagedState,
   statePathForProject,
   type ManagedState,
@@ -192,6 +201,152 @@ describe("managed state", () => {
       await expect(loadManagedState(root)).rejects.toMatchObject({
         category: "state",
       });
+    });
+  });
+
+  it("rejects symlinked and broken canonical state files", async () => {
+    await useFixture(async (root) => {
+      const path = statePathForProject(root);
+      const external = join(root, "external-state.json");
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(external, '{"version":1,"entries":[]}\n', "utf8");
+      await symlink(external, path, "file");
+
+      await expect(loadManagedState(root)).rejects.toMatchObject({
+        category: "state",
+        message: expect.stringContaining("not a regular file"),
+      });
+
+      await rm(path);
+      await symlink(join(root, "missing-state.json"), path, "file");
+      await expect(loadManagedState(root)).rejects.toMatchObject({
+        category: "state",
+        message: expect.stringContaining("not a regular file"),
+      });
+    });
+  });
+
+  it("rejects a symlinked state directory", async () => {
+    await useFixture(async (root) => {
+      const external = join(root, "external-directory");
+      await mkdir(external);
+      await symlink(external, join(root, ".distributor"), "dir");
+
+      await expect(loadManagedState(root)).rejects.toMatchObject({
+        category: "state",
+        message: expect.stringContaining("not a real directory"),
+      });
+    });
+  });
+
+  it("rejects safe but noncanonical stored path spellings", async () => {
+    await useFixture(async (root) => {
+      const path = statePathForProject(root);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(
+        path,
+        JSON.stringify({
+          version: 1,
+          entries: [
+            {
+              sourcePath: ".agents/skills/../skills/review/SKILL.md",
+              targetPath: ".claude/skills/review/SKILL.md",
+              linkValue: "source",
+              attributions: [
+                { harnessId: "claude-code", placementId: "project" },
+              ],
+            },
+          ],
+        }),
+        "utf8",
+      );
+
+      await expect(loadManagedState(root)).rejects.toMatchObject({
+        category: "state",
+        issues: [
+          expect.objectContaining({
+            path: "entries[0].sourcePath",
+            message: expect.stringContaining("canonical"),
+          }),
+        ],
+      });
+    });
+  });
+
+  it("detects a changed recorded symlink value", async () => {
+    await useFixture(async (root) => {
+      const state = stateFixture(root);
+      const entry = state.entries[0]!;
+      await mkdir(dirname(entry.targetPath), { recursive: true });
+      await symlink("different-source", entry.targetPath, "file");
+
+      await expect(evaluateManagedState(state)).resolves.toMatchObject({
+        evaluated: [
+          {
+            status: "conflict",
+            currentLinkValue: "different-source",
+            reason: expect.stringContaining("changed"),
+          },
+        ],
+      });
+    });
+  });
+
+  it("does not create state artifacts for a new empty state", async () => {
+    await useFixture(async (root) => {
+      const loaded = await loadManagedState(root);
+      await expect(
+        persistManagedState(loaded, { version: 1, entries: [] }, root),
+      ).resolves.toEqual({ written: false, warnings: [] });
+      await expect(lstat(join(root, ".distributor"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    });
+  });
+
+  it("creates absent ignore metadata and atomically persists changed state", async () => {
+    await useFixture(async (root) => {
+      const loaded = await loadManagedState(root);
+      const state = stateFixture(root);
+
+      await expect(persistManagedState(loaded, state, root)).resolves.toEqual({
+        written: true,
+        warnings: [],
+      });
+      expect(
+        await readFile(join(root, ".distributor", ".gitignore"), "utf8"),
+      ).toBe("*\n!.gitignore\n");
+      expect(await readFile(statePathForProject(root), "utf8")).toBe(
+        serializeManagedState(state, root),
+      );
+
+      const reloaded = await loadManagedState(root);
+      await expect(persistManagedState(reloaded, state, root)).resolves.toEqual({
+        written: false,
+        warnings: [],
+      });
+    });
+  });
+
+  it("preserves and warns about an ineffective existing ignore file", async () => {
+    await useFixture(async (root) => {
+      const loaded = await loadManagedState(root);
+      const ignorePath = join(root, ".distributor", ".gitignore");
+      await mkdir(dirname(ignorePath), { recursive: true });
+      await writeFile(ignorePath, "custom-rule\n", "utf8");
+
+      const result = await persistManagedState(loaded, stateFixture(root), root);
+
+      expect(result).toMatchObject({
+        written: true,
+        warnings: [
+          expect.objectContaining({
+            path: ignorePath,
+            message: expect.stringContaining("does not ignore state.json"),
+          }),
+        ],
+      });
+      expect(await readFile(ignorePath, "utf8")).toBe("custom-rule\n");
     });
   });
 });

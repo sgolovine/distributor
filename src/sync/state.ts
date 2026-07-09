@@ -1,18 +1,19 @@
-import { lstat, readFile, readlink } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, mkdir, readFile, readlink, writeFile } from "node:fs/promises";
+import { dirname, join, matchesGlob } from "node:path";
 
 import {
   DistributorError,
   type ValidationIssue,
   validationError,
 } from "../errors.js";
+import { atomicWriteFile } from "../filesystem/atomic-write.js";
 import {
   deserializeStatePath,
   pathComparisonKey,
   serializeStatePath,
 } from "../filesystem/paths.js";
 import { ManagedStateSchema } from "./state-schema.js";
-import type { OwnershipAttribution } from "./types.js";
+import type { OwnershipAttribution, PlanNotice } from "./types.js";
 
 export const MANAGED_STATE_VERSION = 1 as const;
 
@@ -47,6 +48,13 @@ export interface StateEvaluation {
   readonly evaluated: readonly StateOwnershipResult[];
   readonly untouched: readonly ManagedStateEntry[];
 }
+
+export interface StatePersistenceResult {
+  readonly written: boolean;
+  readonly warnings: readonly PlanNotice[];
+}
+
+const STATE_IGNORE_CONTENTS = "*\n!.gitignore\n";
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -149,6 +157,15 @@ function validateParsedState(
     let targetPath: string | undefined;
     try {
       sourcePath = deserializeStatePath(entry.sourcePath, projectRoot);
+      if (serializeStatePath(sourcePath, projectRoot) !== entry.sourcePath) {
+        issues.push({
+          path: `entries[${entryIndex}].sourcePath`,
+          message: "stored source path is not in canonical normalized form",
+          received: entry.sourcePath,
+          expected: serializeStatePath(sourcePath, projectRoot),
+          correction: "Review the state path instead of allowing automatic repair.",
+        });
+      }
     } catch (error) {
       const failure = error as DistributorError;
       issues.push({
@@ -161,6 +178,15 @@ function validateParsedState(
     }
     try {
       targetPath = deserializeStatePath(entry.targetPath, projectRoot);
+      if (serializeStatePath(targetPath, projectRoot) !== entry.targetPath) {
+        issues.push({
+          path: `entries[${entryIndex}].targetPath`,
+          message: "stored target path is not in canonical normalized form",
+          received: entry.targetPath,
+          expected: serializeStatePath(targetPath, projectRoot),
+          correction: "Review the state path instead of allowing automatic repair.",
+        });
+      }
     } catch (error) {
       const failure = error as DistributorError;
       issues.push({
@@ -229,9 +255,11 @@ export async function loadManagedState(
   projectRoot: string,
 ): Promise<LoadedManagedState> {
   const path = statePathForProject(projectRoot);
-  let originalText: string;
+  const stateDirectory = dirname(path);
+
+  let directoryStats;
   try {
-    originalText = await readFile(path, "utf8");
+    directoryStats = await lstat(stateDirectory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return {
@@ -242,7 +270,65 @@ export async function loadManagedState(
         originalText: undefined,
       };
     }
+    throw new DistributorError("state", `Could not inspect managed state directory: ${stateDirectory}`, {
+      operation: "load managed state",
+      context: { stateDirectory },
+      correction: "Fix the state-directory permissions and rerun Distributor.",
+      cause: error,
+    });
+  }
 
+  if (!directoryStats.isDirectory()) {
+    throw new DistributorError(
+      "state",
+      `Managed state directory is not a real directory: ${stateDirectory}`,
+      {
+        operation: "load managed state",
+        context: { stateDirectory },
+        correction:
+          "Move the non-directory or symbolic link aside after reviewing it; Distributor will not follow it.",
+      },
+    );
+  }
+
+  let stateStats;
+  try {
+    stateStats = await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return {
+        version: MANAGED_STATE_VERSION,
+        entries: [],
+        path,
+        exists: false,
+        originalText: undefined,
+      };
+    }
+    throw new DistributorError("state", `Could not inspect managed state: ${path}`, {
+      operation: "load managed state",
+      context: { statePath: path },
+      correction: "Fix the state-file permissions and rerun Distributor.",
+      cause: error,
+    });
+  }
+
+  if (!stateStats.isFile()) {
+    throw new DistributorError(
+      "state",
+      `Managed state path is not a regular file: ${path}`,
+      {
+        operation: "load managed state",
+        context: { statePath: path },
+        correction:
+          "Move the non-file or symbolic link aside after reviewing managed links; Distributor will not follow it.",
+      },
+    );
+  }
+
+  let originalText: string;
+  try {
+    originalText = await readFile(path, "utf8");
+  } catch (error) {
     throw new DistributorError("state", `Could not read managed state: ${path}`, {
       operation: "load managed state",
       context: { statePath: path },
@@ -344,4 +430,213 @@ export async function evaluateManagedState(
   }
 
   return { evaluated, untouched };
+}
+
+async function ensureRealStateDirectory(path: string): Promise<void> {
+  let stats;
+  try {
+    stats = await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new DistributorError(
+        "filesystem",
+        `Could not inspect managed state directory: ${path}`,
+        {
+          operation: "persist managed state",
+          context: { stateDirectory: path },
+          correction: "Fix the state-directory permissions and rerun Distributor.",
+          cause: error,
+        },
+      );
+    }
+
+    try {
+      await mkdir(path);
+      stats = await lstat(path);
+    } catch (mkdirError) {
+      if ((mkdirError as NodeJS.ErrnoException).code === "EEXIST") {
+        stats = await lstat(path);
+      } else {
+        throw new DistributorError(
+          "filesystem",
+          `Could not create managed state directory: ${path}`,
+          {
+            operation: "persist managed state",
+            context: { stateDirectory: path },
+            correction: "Fix the project permissions and rerun Distributor.",
+            cause: mkdirError,
+          },
+        );
+      }
+    }
+  }
+
+  if (!stats.isDirectory()) {
+    throw new DistributorError(
+      "filesystem",
+      `Managed state directory is not a real directory: ${path}`,
+      {
+        operation: "persist managed state",
+        context: { stateDirectory: path },
+        correction:
+          "Move the non-directory or symbolic link aside after reviewing it; Distributor will not write through it.",
+      },
+    );
+  }
+}
+
+function ignoreFileCoversState(contents: string): boolean {
+  let ignored = false;
+
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith("#")) {
+      continue;
+    }
+
+    const negated = line.startsWith("!");
+    let pattern = negated ? line.slice(1) : line;
+    if (pattern.startsWith("/")) {
+      pattern = pattern.slice(1);
+    }
+    if (pattern.length === 0) {
+      continue;
+    }
+
+    try {
+      if (matchesGlob("state.json", pattern)) {
+        ignored = !negated;
+      }
+    } catch {
+      // Invalid patterns do not establish that state.json is ignored.
+    }
+  }
+
+  return ignored;
+}
+
+async function ensureStateIgnore(
+  stateDirectory: string,
+): Promise<PlanNotice[]> {
+  const ignorePath = join(stateDirectory, ".gitignore");
+  let stats;
+  try {
+    stats = await lstat(ignorePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new DistributorError(
+        "filesystem",
+        `Could not inspect state ignore file: ${ignorePath}`,
+        {
+          operation: "persist managed state",
+          context: { ignorePath },
+          correction: "Fix the ignore-file permissions and rerun Distributor.",
+          cause: error,
+        },
+      );
+    }
+
+    try {
+      await writeFile(ignorePath, STATE_IGNORE_CONTENTS, {
+        encoding: "utf8",
+        flag: "wx",
+      });
+      return [];
+    } catch (writeError) {
+      if ((writeError as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw new DistributorError(
+          "filesystem",
+          `Could not create state ignore file: ${ignorePath}`,
+          {
+            operation: "persist managed state",
+            context: { ignorePath },
+            correction: "Fix the state-directory permissions and rerun Distributor.",
+            cause: writeError,
+          },
+        );
+      }
+      stats = await lstat(ignorePath);
+    }
+  }
+
+  if (!stats.isFile()) {
+    throw new DistributorError(
+      "filesystem",
+      `State ignore path is not a regular file: ${ignorePath}`,
+      {
+        operation: "persist managed state",
+        context: { ignorePath },
+        correction:
+          "Move the non-file or symbolic link aside; Distributor will not replace it.",
+      },
+    );
+  }
+
+  let contents: string;
+  try {
+    contents = await readFile(ignorePath, "utf8");
+  } catch (error) {
+    throw new DistributorError(
+      "filesystem",
+      `Could not read state ignore file: ${ignorePath}`,
+      {
+        operation: "persist managed state",
+        context: { ignorePath },
+        correction: "Fix the ignore-file permissions and rerun Distributor.",
+        cause: error,
+      },
+    );
+  }
+
+  return ignoreFileCoversState(contents)
+    ? []
+    : [
+        {
+          path: ignorePath,
+          message:
+            "The existing .distributor/.gitignore does not ignore state.json; local ownership state may be committed.",
+        },
+      ];
+}
+
+export async function persistManagedState(
+  loaded: LoadedManagedState,
+  nextState: ManagedState,
+  projectRoot: string,
+): Promise<StatePersistenceResult> {
+  const contents = serializeManagedState(nextState, projectRoot);
+  if (loaded.originalText === contents || (!loaded.exists && nextState.entries.length === 0)) {
+    return { written: false, warnings: [] };
+  }
+
+  const expectedPath = statePathForProject(projectRoot);
+  if (loaded.path !== expectedPath) {
+    throw new DistributorError("state", "Managed state path is not canonical.", {
+      operation: "persist managed state",
+      context: { statePath: loaded.path, expectedPath },
+      correction: "Reload state from the canonical project-local path before writing.",
+    });
+  }
+
+  const stateDirectory = dirname(expectedPath);
+  await ensureRealStateDirectory(stateDirectory);
+  const warnings = await ensureStateIgnore(stateDirectory);
+
+  try {
+    await atomicWriteFile(expectedPath, contents);
+  } catch (error) {
+    throw new DistributorError(
+      "filesystem",
+      `Could not atomically write managed state: ${expectedPath}`,
+      {
+        operation: "persist managed state",
+        context: { statePath: expectedPath },
+        correction:
+          "Fix the state-directory permissions and rerun sync; newly created exact links can be adopted safely.",
+        cause: error,
+      },
+    );
+  }
+
+  return { written: true, warnings };
 }
