@@ -33,6 +33,7 @@ export interface LoadedManagedState extends ManagedState {
   readonly path: string;
   readonly exists: boolean;
   readonly originalText: string | undefined;
+  readonly warnings: readonly PlanNotice[];
 }
 
 export type StateOwnershipStatus = "owned" | "missing" | "conflict";
@@ -268,6 +269,7 @@ export async function loadManagedState(
         path,
         exists: false,
         originalText: undefined,
+        warnings: [],
       };
     }
     throw new DistributorError("state", `Could not inspect managed state directory: ${stateDirectory}`, {
@@ -290,6 +292,7 @@ export async function loadManagedState(
       },
     );
   }
+  const warnings = await inspectManagedStateIgnore(projectRoot);
 
   let stateStats;
   try {
@@ -302,6 +305,7 @@ export async function loadManagedState(
         path,
         exists: false,
         originalText: undefined,
+        warnings,
       };
     }
     throw new DistributorError("state", `Could not inspect managed state: ${path}`, {
@@ -338,7 +342,7 @@ export async function loadManagedState(
   }
 
   const state = validateParsedState(parseStateText(originalText, path), projectRoot, path);
-  return { ...state, path, exists: true, originalText };
+  return { ...state, path, exists: true, originalText, warnings };
 }
 
 export function serializeManagedState(
@@ -521,48 +525,26 @@ function ignoreFileCoversState(contents: string): boolean {
   return ignored;
 }
 
-async function ensureStateIgnore(
-  stateDirectory: string,
-): Promise<PlanNotice[]> {
-  const ignorePath = join(stateDirectory, ".gitignore");
+async function inspectExistingStateIgnore(
+  ignorePath: string,
+): Promise<PlanNotice[] | undefined> {
   let stats;
   try {
     stats = await lstat(ignorePath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new DistributorError(
-        "filesystem",
-        `Could not inspect state ignore file: ${ignorePath}`,
-        {
-          operation: "persist managed state",
-          context: { ignorePath },
-          correction: "Fix the ignore-file permissions and rerun Distributor.",
-          cause: error,
-        },
-      );
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
     }
-
-    try {
-      await writeFile(ignorePath, STATE_IGNORE_CONTENTS, {
-        encoding: "utf8",
-        flag: "wx",
-      });
-      return [];
-    } catch (writeError) {
-      if ((writeError as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw new DistributorError(
-          "filesystem",
-          `Could not create state ignore file: ${ignorePath}`,
-          {
-            operation: "persist managed state",
-            context: { ignorePath },
-            correction: "Fix the state-directory permissions and rerun Distributor.",
-            cause: writeError,
-          },
-        );
-      }
-      stats = await lstat(ignorePath);
-    }
+    throw new DistributorError(
+      "filesystem",
+      `Could not inspect state ignore file: ${ignorePath}`,
+      {
+        operation: "inspect managed state",
+        context: { ignorePath },
+        correction: "Fix the ignore-file permissions and rerun Distributor.",
+        cause: error,
+      },
+    );
   }
 
   if (!stats.isFile()) {
@@ -570,7 +552,7 @@ async function ensureStateIgnore(
       "filesystem",
       `State ignore path is not a regular file: ${ignorePath}`,
       {
-        operation: "persist managed state",
+        operation: "inspect managed state",
         context: { ignorePath },
         correction:
           "Move the non-file or symbolic link aside; Distributor will not replace it.",
@@ -586,7 +568,7 @@ async function ensureStateIgnore(
       "filesystem",
       `Could not read state ignore file: ${ignorePath}`,
       {
-        operation: "persist managed state",
+        operation: "inspect managed state",
         context: { ignorePath },
         correction: "Fix the ignore-file permissions and rerun Distributor.",
         cause: error,
@@ -603,6 +585,58 @@ async function ensureStateIgnore(
             "The existing .distributor/.gitignore does not ignore state.json; local ownership state may be committed.",
         },
       ];
+}
+
+export async function inspectManagedStateIgnore(
+  projectRoot: string,
+): Promise<readonly PlanNotice[]> {
+  const ignorePath = join(dirname(statePathForProject(projectRoot)), ".gitignore");
+  return (await inspectExistingStateIgnore(ignorePath)) ?? [];
+}
+
+async function ensureStateIgnore(
+  stateDirectory: string,
+): Promise<PlanNotice[]> {
+  const ignorePath = join(stateDirectory, ".gitignore");
+  const existing = await inspectExistingStateIgnore(ignorePath);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  try {
+    await writeFile(ignorePath, STATE_IGNORE_CONTENTS, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    return [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw new DistributorError(
+        "filesystem",
+        `Could not create state ignore file: ${ignorePath}`,
+        {
+          operation: "persist managed state",
+          context: { ignorePath },
+          correction: "Fix the state-directory permissions and rerun Distributor.",
+          cause: error,
+        },
+      );
+    }
+  }
+
+  const raced = await inspectExistingStateIgnore(ignorePath);
+  if (raced === undefined) {
+    throw new DistributorError(
+      "filesystem",
+      `State ignore file disappeared while it was being created: ${ignorePath}`,
+      {
+        operation: "persist managed state",
+        context: { ignorePath },
+        correction: "Stabilize the state directory and rerun Distributor.",
+      },
+    );
+  }
+  return raced;
 }
 
 export async function persistManagedState(
@@ -638,7 +672,7 @@ export async function persistManagedState(
         operation: "persist managed state",
         context: { statePath: expectedPath },
         correction:
-          "Fix the state-directory permissions and rerun sync; newly created exact links can be adopted safely.",
+          "Fix the state-directory permissions and rerun sync; prior managed links are restored when safe and new exact links can be adopted.",
         cause: error,
       },
     );

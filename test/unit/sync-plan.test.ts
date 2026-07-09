@@ -1,4 +1,5 @@
-import { access, mkdir, symlink, writeFile } from "node:fs/promises";
+import { lstatSync, realpathSync } from "node:fs";
+import { access, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -8,6 +9,10 @@ import {
   type HarnessPlacement,
 } from "../../src/adapters/index.js";
 import { useFixture } from "../helpers/fixture.js";
+import {
+  discoverSkills,
+  type SourceRootIdentity,
+} from "../../src/skills/discover.js";
 import { buildSyncPlan } from "../../src/sync/plan.js";
 import type {
   PlacementResolution,
@@ -25,6 +30,45 @@ const CLAUDE_ATTRIBUTION = {
 } as const;
 
 describe("buildSyncPlan", () => {
+  it("rejects a source ancestor redirected after skill discovery", async () => {
+    await useFixture(async (root) => {
+      const projectRoot = join(root, "project");
+      const sourceRoot = join(projectRoot, ".agents", "skills");
+      const sourcePath = join(sourceRoot, "review", "SKILL.md");
+      const targetRoot = join(projectRoot, ".claude", "skills");
+      const targetPath = join(targetRoot, "review", "SKILL.md");
+      await mkdir(dirname(sourcePath), { recursive: true });
+      await writeFile(
+        sourcePath,
+        "---\nname: review\ndescription: Review code.\n---\n",
+      );
+      const discovered = await discoverSkills(sourceRoot);
+      const mapping: PlannedFile = {
+        skillName: "review",
+        sourcePath,
+        targetPath,
+        linkValue: relative(dirname(targetPath), sourcePath),
+        attributions: [CLAUDE_ATTRIBUTION],
+      };
+      const input = {
+        ...resolution(targetRoot, [mapping]),
+        sourceRootIdentity: discovered.sourceRootIdentity,
+      };
+      const outsideAgents = join(root, "outside-agents");
+      const outsideSkill = join(outsideAgents, "skills", "review");
+      await mkdir(outsideSkill, { recursive: true });
+      await writeFile(join(outsideSkill, "SKILL.md"), "outside");
+      await rm(join(projectRoot, ".agents"), { recursive: true });
+      await symlink(outsideAgents, join(projectRoot, ".agents"), "dir");
+
+      await expect(buildSyncPlan(input, emptyState())).rejects.toMatchObject({
+        category: "source",
+        message: expect.stringContaining("identity changed after discovery"),
+      });
+      await expect(access(targetRoot)).rejects.toThrow();
+    });
+  });
+
   it("classifies an absent target as create without creating parents", async () => {
     await useFixture(async (root) => {
       const fixture = await mappingFixture(root);
@@ -696,7 +740,10 @@ function resolution(
       });
     }
   }
+  const sourceRoot = sourceRootForMappings(mappings);
   return {
+    sourceRoot,
+    sourceRootIdentity: sourceIdentity(sourceRoot),
     placements: [...byAttribution.values()],
     mappings,
     satisfiedPlacements: [],
@@ -706,10 +753,28 @@ function resolution(
 
 function emptyResolution(): PlacementResolution {
   return {
+    sourceRoot: process.cwd(),
+    sourceRootIdentity: sourceIdentity(process.cwd()),
     placements: [],
     mappings: [],
     satisfiedPlacements: [],
     warnings: [],
+  };
+}
+
+function sourceRootForMappings(mappings: readonly PlannedFile[]): string {
+  const mapping = mappings[0];
+  return mapping === undefined
+    ? process.cwd()
+    : dirname(dirname(mapping.sourcePath));
+}
+
+function sourceIdentity(sourceRoot: string): SourceRootIdentity {
+  const stats = lstatSync(sourceRoot);
+  return {
+    realPath: realpathSync(sourceRoot),
+    device: stats.dev,
+    inode: stats.ino,
   };
 }
 

@@ -10,11 +10,13 @@ import {
   sep,
 } from "node:path";
 
+import { DistributorError } from "../errors.js";
 import {
   isStrictChildPath,
   pathComparisonKey,
   pathsAreEquivalent,
 } from "../filesystem/paths.js";
+import type { SourceRootIdentity } from "../skills/discover.js";
 import type {
   PlacementResolution,
   ResolvedTargetPlacement,
@@ -41,6 +43,7 @@ export interface BuildSyncPlanOptions {
 
 export interface ReadOnlySyncPlan extends SyncPlan {
   readonly applicable: boolean;
+  readonly sourceRootIdentity: SourceRootIdentity;
   readonly stateEvaluation: StateEvaluation;
 }
 
@@ -70,6 +73,10 @@ export async function buildSyncPlan(
   state: ManagedState,
   options: BuildSyncPlanOptions = {},
 ): Promise<ReadOnlySyncPlan> {
+  await inspectSourceRoot(
+    resolution.sourceRoot,
+    resolution.sourceRootIdentity,
+  );
   const stateEvaluation = await evaluateManagedState(state, options.harnessId);
   const desiredMappings = [...resolution.mappings].sort(comparePlannedFiles);
   const desiredTargets = new Set(
@@ -162,8 +169,38 @@ export async function buildSyncPlan(
     ),
     warnings: deduplicateNotices(resolution.warnings).sort(compareNotices),
     failures: sortedFailures,
+    sourceRootIdentity: resolution.sourceRootIdentity,
     stateEvaluation,
   };
+}
+
+async function inspectSourceRoot(
+  sourceRoot: string,
+  expected: SourceRootIdentity,
+): Promise<void> {
+  try {
+    const stats = await lstat(sourceRoot);
+    const currentRealPath = await realpath(sourceRoot);
+    if (
+      !stats.isDirectory() ||
+      stats.dev !== expected.device ||
+      stats.ino !== expected.inode ||
+      !pathsAreEquivalent(currentRealPath, expected.realPath)
+    ) {
+      throw new Error("the source root identity changed after discovery");
+    }
+  } catch (error) {
+    throw new DistributorError(
+      "source",
+      `Source root identity changed after discovery: ${sourceRoot}`,
+      {
+        operation: "build sync plan",
+        context: { sourceRoot },
+        correction: "Restore the real source directory and rerun sync.",
+        cause: error,
+      },
+    );
+  }
 }
 
 async function inspectMappingParents(

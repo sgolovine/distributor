@@ -176,7 +176,11 @@ export async function runSync(
   );
 
   if (options.dryRun === true) {
-    const warnings = mergeNotices(skillWarnings, plan.warnings);
+    const warnings = mergeNotices(
+      skillWarnings,
+      state.warnings,
+      plan.warnings,
+    );
     const failures: readonly ApplyFailure[] = Object.freeze([]);
     return Object.freeze({
       exitCode: 0,
@@ -209,6 +213,7 @@ export async function runSync(
   );
   const warnings = mergeNotices(
     skillWarnings,
+    state.warnings,
     plan.warnings,
     applyResult.warnings,
   );

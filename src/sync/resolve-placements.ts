@@ -20,7 +20,11 @@ import {
   resolveConfigPath,
   type PathStyle,
 } from "../filesystem/paths.js";
-import type { SkillDiscoveryResult, SourceSkill } from "../skills/discover.js";
+import type {
+  SkillDiscoveryResult,
+  SourceRootIdentity,
+  SourceSkill,
+} from "../skills/discover.js";
 import type {
   OwnershipAttribution,
   PlannedFile,
@@ -36,6 +40,8 @@ export interface ResolvedTargetPlacement {
 }
 
 export interface PlacementResolution {
+  readonly sourceRoot: string;
+  readonly sourceRootIdentity: SourceRootIdentity;
   readonly placements: readonly ResolvedTargetPlacement[];
   readonly mappings: readonly PlannedFile[];
   readonly satisfiedPlacements: readonly SatisfiedPlacement[];
@@ -61,13 +67,25 @@ const DEFAULT_PATH_STYLE: PathStyle =
 
 export function resolvePlacements(
   config: ValidatedProjectConfig,
-  discovery: Pick<SkillDiscoveryResult, "skills">,
+  discovery: SkillDiscoveryResult,
   options: ResolvePlacementsOptions = {},
 ): PlacementResolution {
   const style = options.pathStyle ?? DEFAULT_PATH_STYLE;
   const pathApi = style === "win32" ? win32 : posix;
   const projectRoot = normalizeAbsolutePath(config.projectRoot, style);
   const sourceRoot = normalizeAbsolutePath(config.sourceRoot, style);
+  const discoveredSourceRoot = normalizeAbsolutePath(discovery.sourceRoot, style);
+  if (!pathsAreEquivalent(sourceRoot, discoveredSourceRoot, style)) {
+    throw new DistributorError(
+      "source",
+      "Skill discovery and placement resolution disagree on the source root.",
+      {
+        operation: "resolve placements",
+        context: { sourceRoot, discoveredSourceRoot },
+        correction: "Rediscover skills from the configured source root and rerun sync.",
+      },
+    );
+  }
   const selectedHarnesses = selectHarnesses(config.harnesses, options.harness);
   const placements: ResolvedTargetPlacement[] = [];
   const satisfiedPlacements: SatisfiedPlacement[] = [];
@@ -162,6 +180,8 @@ export function resolvePlacements(
   warnings.sort(compareNotice);
 
   return {
+    sourceRoot,
+    sourceRootIdentity: discovery.sourceRootIdentity,
     placements,
     mappings: buildMappings(
       projectRoot,

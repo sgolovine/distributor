@@ -2,6 +2,7 @@ import {
   access,
   lstat,
   mkdir,
+  readFile,
   readdir,
   readlink,
   writeFile,
@@ -241,6 +242,39 @@ describe("runSync orchestration", () => {
 });
 
 describe("runSync filesystem guarantees", () => {
+  it("keeps an ineffective state-ignore warning at dry-run/apply parity", async () => {
+    await useFixture(async (root) => {
+      const skillRoot = join(root, ".agents", "skills", "review");
+      const ignorePath = join(root, ".distributor", ".gitignore");
+      await mkdir(skillRoot, { recursive: true });
+      await mkdir(dirname(ignorePath), { recursive: true });
+      await writeFile(
+        join(root, "distributor.config.json"),
+        JSON.stringify({ harnesses: ["claude-code"] }),
+        "utf8",
+      );
+      await writeFile(
+        join(skillRoot, "SKILL.md"),
+        "---\nname: review\ndescription: Review code.\n---\n",
+        "utf8",
+      );
+      await writeFile(ignorePath, "custom-rule\n", "utf8");
+
+      const dry = await runSync({ cwd: root, dryRun: true });
+      const applied = await runSync({ cwd: root });
+
+      expect(applied.counts).toEqual(dry.counts);
+      expect(applied.warnings).toEqual(dry.warnings);
+      expect(dry.warnings).toEqual([
+        expect.objectContaining({
+          path: ignorePath,
+          message: expect.stringContaining("does not ignore state.json"),
+        }),
+      ]);
+      expect(await readFile(ignorePath, "utf8")).toBe("custom-rule\n");
+    });
+  });
+
   it("does not create state artifacts for an empty satisfied sync", async () => {
     await useFixture(async (root) => {
       await mkdir(join(root, ".agents", "skills"), { recursive: true });
@@ -338,6 +372,7 @@ function orchestrationFixture(): OrchestrationFixture {
     path: "/project/.distributor/state.json",
     exists: false,
     originalText: undefined,
+    warnings: [],
   };
 
   return {
@@ -358,6 +393,7 @@ function orchestrationFixture(): OrchestrationFixture {
     },
     skills: {
       sourceRoot,
+      sourceRootIdentity: { realPath: sourceRoot, device: 1, inode: 1 },
       skills: [
         {
           name: "review",
@@ -381,6 +417,8 @@ function orchestrationFixture(): OrchestrationFixture {
       ],
     },
     resolution: {
+      sourceRoot,
+      sourceRootIdentity: { realPath: sourceRoot, device: 1, inode: 1 },
       placements: [
         {
           harnessId: "claude-code",
@@ -404,6 +442,7 @@ function orchestrationFixture(): OrchestrationFixture {
     state,
     plan: {
       applicable: true,
+      sourceRootIdentity: { realPath: sourceRoot, device: 1, inode: 1 },
       operations: [operation],
       satisfiedPlacements: [
         { harnessId: "codex", placementId: "project", sourceRoot },

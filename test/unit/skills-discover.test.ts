@@ -1,4 +1,10 @@
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  realpath,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { once } from "node:events";
@@ -15,8 +21,18 @@ describe("discoverSkills", () => {
   it("returns an empty result for an empty source directory", async () => {
     await useFixture(async (root) => {
       const result = await discoverSkills(root);
+      const stats = await lstat(root);
 
-      expect(result).toEqual({ sourceRoot: root, skills: [], warnings: [] });
+      expect(result).toEqual({
+        sourceRoot: root,
+        sourceRootIdentity: {
+          realPath: await realpath(root),
+          device: stats.dev,
+          inode: stats.ino,
+        },
+        skills: [],
+        warnings: [],
+      });
     });
   });
 

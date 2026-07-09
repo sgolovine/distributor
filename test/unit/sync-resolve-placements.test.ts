@@ -12,7 +12,10 @@ import type {
   ValidatedProjectConfig,
 } from "../../src/config/validate.js";
 import { DistributorError } from "../../src/errors.js";
-import type { SourceSkill } from "../../src/skills/discover.js";
+import type {
+  SkillDiscoveryResult,
+  SourceSkill,
+} from "../../src/skills/discover.js";
 import { resolvePlacements } from "../../src/sync/resolve-placements.js";
 
 describe("resolvePlacements", () => {
@@ -25,7 +28,9 @@ describe("resolvePlacements", () => {
         automatic("codex"),
         automatic("claude-code"),
       ]),
-      { skills: [skill(sourceRoot, "review", ["SKILL.md", "references/a.md"])] },
+      discovery(sourceRoot, [
+        skill(sourceRoot, "review", ["SKILL.md", "references/a.md"]),
+      ]),
       { pathStyle: "posix" },
     );
 
@@ -55,13 +60,18 @@ describe("resolvePlacements", () => {
     expect(result.mappings[0]?.linkValue).toBe(
       "../../../.agents/skills/review/SKILL.md",
     );
+    expect(result.sourceRootIdentity).toEqual({
+      realPath: sourceRoot,
+      device: 1,
+      inode: 1,
+    });
   });
 
   it("recognizes every declared compatible project placement", () => {
     const sourceRoot = "/project/.claude/skills";
     const result = resolvePlacements(
       projectConfig("/project", sourceRoot, [automatic("opencode")]),
-      { skills: [skill(sourceRoot, "review")] },
+      discovery(sourceRoot, [skill(sourceRoot, "review")]),
       { pathStyle: "posix" },
     );
 
@@ -83,9 +93,10 @@ describe("resolvePlacements", () => {
         automatic("codex"),
         automatic("claude-code"),
       ]),
-      {
-        skills: [skill(sourceRoot, "zeta"), skill(sourceRoot, "alpha")],
-      },
+      discovery(sourceRoot, [
+        skill(sourceRoot, "zeta"),
+        skill(sourceRoot, "alpha"),
+      ]),
       { pathStyle: "posix" },
     );
 
@@ -110,10 +121,10 @@ describe("resolvePlacements", () => {
       automatic("claude-code"),
       automatic("codex"),
     ]);
-    const discovery = { skills: [skill(sourceRoot, "review")] };
+    const discovered = discovery(sourceRoot, [skill(sourceRoot, "review")]);
 
     expect(
-      resolvePlacements(config, discovery, {
+      resolvePlacements(config, discovered, {
         harness: "codex",
         pathStyle: "posix",
       }).placements.map((item) => item.harnessId),
@@ -121,13 +132,13 @@ describe("resolvePlacements", () => {
 
     for (const requested of ["unknown", "cursor", "opencode"]) {
       expect(() =>
-        resolvePlacements(config, discovery, {
+        resolvePlacements(config, discovered, {
           harness: requested,
           pathStyle: "posix",
         }),
       ).toThrow(DistributorError);
       try {
-        resolvePlacements(config, discovery, {
+        resolvePlacements(config, discovered, {
           harness: requested,
           pathStyle: "posix",
         });
@@ -144,7 +155,7 @@ describe("resolvePlacements", () => {
       projectConfig("/project", sourceRoot, [
         explicit("opencode", userPlacement, "/project/custom", true),
       ]),
-      { skills: [skill(sourceRoot, "review")] },
+      discovery(sourceRoot, [skill(sourceRoot, "review")]),
       { pathStyle: "posix" },
     );
 
@@ -172,7 +183,7 @@ describe("resolvePlacements", () => {
         projectConfig("/project", sourceRoot, [
           explicit("claude-code", projectPlacement, sourceRoot, true),
         ]),
-        { skills: [skill(sourceRoot, "review")] },
+        discovery(sourceRoot, [skill(sourceRoot, "review")]),
         { pathStyle: "posix" },
       ).satisfiedPlacements,
     ).toEqual([
@@ -193,7 +204,7 @@ describe("resolvePlacements", () => {
             true,
           ),
         ]),
-        { skills: [skill(sourceRoot, "review")] },
+        discovery(sourceRoot, [skill(sourceRoot, "review")]),
         { pathStyle: "posix" },
       ),
     ).toThrow("inside source root");
@@ -210,7 +221,7 @@ describe("resolvePlacements", () => {
           false,
         ),
       ]),
-      { skills: [skill(sourceRoot, "review")] },
+      discovery(sourceRoot, [skill(sourceRoot, "review")]),
       { pathStyle: "posix" },
     );
 
@@ -230,7 +241,7 @@ describe("resolvePlacements", () => {
     const sourceRoot = "/shared/source";
     const result = resolvePlacements(
       projectConfig("/project", sourceRoot, [automatic("claude-code")]),
-      { skills: [skill(sourceRoot, "review")] },
+      discovery(sourceRoot, [skill(sourceRoot, "review")]),
       { pathStyle: "posix" },
     );
 
@@ -253,7 +264,7 @@ describe("resolvePlacements", () => {
             true,
           ),
         ]),
-        { skills: [skill(sourceRoot, "review")] },
+        discovery(sourceRoot, [skill(sourceRoot, "review")]),
         { pathStyle: "posix" },
       ),
     ).toThrow("canonical source tree");
@@ -277,7 +288,7 @@ describe("resolvePlacements", () => {
           true,
         ),
       ]),
-      { skills: [skill(sourceRoot, "review")] },
+      discovery(sourceRoot, [skill(sourceRoot, "review")]),
       { pathStyle: "posix" },
     );
 
@@ -312,7 +323,7 @@ describe("resolvePlacements", () => {
         projectConfig("/project", sourceRoot, [
           { name: "opencode", targets },
         ]),
-        { skills: [review] },
+        discovery(sourceRoot, [review]),
         { pathStyle: "posix" },
       ),
     ).toThrow("maps to different source files");
@@ -333,7 +344,7 @@ describe("resolvePlacements", () => {
             true,
           ),
         ]),
-        { skills: [review] },
+        discovery(sourceRoot, [review]),
         { pathStyle: "win32" },
       ),
     ).toThrow("collide unsafely");
@@ -351,6 +362,22 @@ function projectConfig(
     projectRoot,
     sourceRoot,
     harnesses,
+  };
+}
+
+function discovery(
+  sourceRoot: string,
+  skills: readonly SourceSkill[],
+): SkillDiscoveryResult {
+  return {
+    sourceRoot,
+    sourceRootIdentity: {
+      realPath: sourceRoot,
+      device: 1,
+      inode: 1,
+    },
+    skills: [...skills],
+    warnings: [],
   };
 }
 

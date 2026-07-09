@@ -1,3 +1,4 @@
+import { lstatSync, realpathSync } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -16,6 +17,7 @@ import {
   type HarnessPlacement,
 } from "../../src/adapters/index.js";
 import { DistributorError } from "../../src/errors.js";
+import type { SourceRootIdentity } from "../../src/skills/discover.js";
 import { useFixture } from "../helpers/fixture.js";
 import { applySyncPlan } from "../../src/sync/apply.js";
 import { buildSyncPlan } from "../../src/sync/plan.js";
@@ -142,6 +144,36 @@ describe("applySyncPlan target mutations", () => {
         targetLinkMutated: false,
         failure: {
           message: expect.stringContaining("Source file changed after planning"),
+          correction: expect.stringContaining("source symlinks"),
+        },
+      });
+      await expect(lstat(fixture.targetRoot)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(result.nextState.entries).toEqual([]);
+    });
+  });
+
+  it("refuses a source directory replaced by an external symlink after planning", async () => {
+    await useFixture(async (root) => {
+      const fixture = await mappingFixture(root);
+      const loaded = loadedState(root, []);
+      const input = resolution(fixture.targetRoot, [fixture.mapping]);
+      const plan = await buildSyncPlan(input, loaded);
+      const skillRoot = dirname(fixture.sourcePath);
+      const outsideSkill = join(root, "outside-skill");
+      await mkdir(outsideSkill);
+      await writeFile(join(outsideSkill, "SKILL.md"), "outside", "utf8");
+      await rm(skillRoot, { recursive: true });
+      await symlink(outsideSkill, skillRoot, "dir");
+
+      const result = await applySyncPlan(plan, input, loaded, root);
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        targetLinkMutated: false,
+        failure: {
+          message: expect.stringContaining("Source parent changed"),
           correction: expect.stringContaining("source symlinks"),
         },
       });
@@ -300,6 +332,281 @@ describe("applySyncPlan target mutations", () => {
         sourcePath: fixture.mapping.sourcePath,
         linkValue: fixture.mapping.linkValue,
       });
+    });
+  });
+
+  it("rolls back an update when state persistence fails and retries safely", async () => {
+    await useFixture(async (root) => {
+      const fixture = await updateFixture(root);
+      const statePath = statePathForProject(root);
+      const originalText = serializeManagedState(
+        { version: 1, entries: [fixture.priorEntry] },
+        root,
+      );
+      await mkdir(dirname(statePath), { recursive: true });
+      await writeFile(statePath, originalText, "utf8");
+      const loaded = await loadManagedState(root);
+      const plan = await buildSyncPlan(fixture.resolution, loaded);
+
+      const failed = await applySyncPlan(
+        plan,
+        fixture.resolution,
+        loaded,
+        root,
+        {
+          persistState: async () => {
+            throw new Error("simulated state failure");
+          },
+        },
+      );
+
+      expect(failed).toMatchObject({
+        statePersisted: false,
+        operations: [{ status: "failed", targetLinkMutated: true }],
+        nextState: { entries: [fixture.priorEntry] },
+      });
+      expect(await readlink(fixture.mapping.targetPath)).toBe(
+        fixture.priorEntry.linkValue,
+      );
+      expect(await readFile(statePath, "utf8")).toBe(originalText);
+
+      const reloaded = await loadManagedState(root);
+      const retryPlan = await buildSyncPlan(fixture.resolution, reloaded);
+      expect(retryPlan.operations[0]?.kind).toBe("update");
+      const retried = await applySyncPlan(
+        retryPlan,
+        fixture.resolution,
+        reloaded,
+        root,
+      );
+      expect(retried.operations[0]?.status).toBe("updated");
+      expect(await readlink(fixture.mapping.targetPath)).toBe(
+        fixture.mapping.linkValue,
+      );
+    });
+  });
+
+  it("rolls back a mutated update that failed post-write verification before persistence failed", async () => {
+    await useFixture(async (root) => {
+      const fixture = await updateFixture(root);
+      let targetReads = 0;
+
+      const result = await applySyncPlan(
+        fixture.plan,
+        fixture.resolution,
+        fixture.loaded,
+        root,
+        {
+          filesystem: {
+            readlink: async (path) => {
+              const value = await readlink(path);
+              if (path === fixture.mapping.targetPath) {
+                targetReads += 1;
+                if (targetReads === 3) {
+                  return "verification-mismatch";
+                }
+              }
+              return value;
+            },
+          },
+          persistState: async () => {
+            throw new Error("simulated state failure");
+          },
+        },
+      );
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        targetLinkMutated: true,
+        failure: {
+          message: expect.stringContaining("does not match the desired link"),
+        },
+      });
+      expect(await readlink(fixture.mapping.targetPath)).toBe(
+        fixture.priorEntry.linkValue,
+      );
+      const retry = await buildSyncPlan(fixture.resolution, fixture.loaded);
+      expect(retry).toMatchObject({ applicable: true });
+      expect(retry.operations[0]?.kind).toBe("update");
+    });
+  });
+
+  it("restores a prior-owned create after verification and persistence both fail", async () => {
+    await useFixture(async (root) => {
+      const fixture = await updateFixture(root);
+      await rm(fixture.mapping.targetPath);
+      const plan = await buildSyncPlan(fixture.resolution, fixture.loaded);
+      expect(plan.operations[0]?.kind).toBe("create");
+      let targetReads = 0;
+
+      const result = await applySyncPlan(
+        plan,
+        fixture.resolution,
+        fixture.loaded,
+        root,
+        {
+          filesystem: {
+            readlink: async (path) => {
+              const value = await readlink(path);
+              if (path === fixture.mapping.targetPath) {
+                targetReads += 1;
+                if (targetReads === 1) {
+                  return "verification-mismatch";
+                }
+              }
+              return value;
+            },
+          },
+          persistState: async () => {
+            throw new Error("simulated state failure");
+          },
+        },
+      );
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        targetLinkMutated: true,
+      });
+      await expect(lstat(fixture.mapping.targetPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(result.nextState.entries).toEqual([fixture.priorEntry]);
+      const retry = await buildSyncPlan(fixture.resolution, fixture.loaded);
+      expect(retry).toMatchObject({ applicable: true });
+      expect(retry.operations[0]?.kind).toBe("create");
+    });
+  });
+
+  it("does not overwrite a target that races state-failure rollback", async () => {
+    await useFixture(async (root) => {
+      const fixture = await updateFixture(root);
+
+      const result = await applySyncPlan(
+        fixture.plan,
+        fixture.resolution,
+        fixture.loaded,
+        root,
+        {
+          persistState: async () => {
+            await rm(fixture.mapping.targetPath);
+            await symlink("raced-after-update", fixture.mapping.targetPath, "file");
+            throw new Error("simulated state failure");
+          },
+        },
+      );
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        targetLinkMutated: true,
+        failure: {
+          phase: "target",
+          message: expect.stringContaining("target changed"),
+        },
+      });
+      expect(result.failures).toEqual([
+        expect.objectContaining({ phase: "state" }),
+        expect.objectContaining({
+          phase: "target",
+          message: expect.stringContaining("target changed"),
+        }),
+      ]);
+      expect(await readlink(fixture.mapping.targetPath)).toBe(
+        "raced-after-update",
+      );
+    });
+  });
+
+  it("does not roll back through a target parent redirected after persistence begins", async () => {
+    await useFixture(async (root) => {
+      const fixture = await updateFixture(root);
+      const targetRoot = dirname(dirname(fixture.mapping.targetPath));
+      const outsideRoot = join(root, "outside-target");
+      const outsideTarget = join(outsideRoot, "review", "SKILL.md");
+
+      const result = await applySyncPlan(
+        fixture.plan,
+        fixture.resolution,
+        fixture.loaded,
+        root,
+        {
+          persistState: async () => {
+            await mkdir(dirname(outsideTarget), { recursive: true });
+            await symlink(
+              fixture.mapping.linkValue,
+              outsideTarget,
+              "file",
+            );
+            await rm(targetRoot, { recursive: true });
+            await symlink(outsideRoot, targetRoot, "dir");
+            throw new Error("simulated state failure");
+          },
+        },
+      );
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        failure: {
+          phase: "parent",
+          message: expect.stringContaining("escapes target root"),
+        },
+      });
+      expect(await readlink(outsideTarget)).toBe(fixture.mapping.linkValue);
+    });
+  });
+
+  it("refuses rollback when an in-root parent symlink changes physical targets", async () => {
+    await useFixture(async (root) => {
+      const sourcePath = join(root, "source", "review", "SKILL.md");
+      const oldSource = join(root, "old-source", "review", "SKILL.md");
+      const targetRoot = join(root, "target");
+      const firstParent = join(targetRoot, "a");
+      const secondParent = join(targetRoot, "b");
+      const logicalParent = join(targetRoot, "review");
+      const targetPath = join(logicalParent, "SKILL.md");
+      const firstTarget = join(firstParent, "SKILL.md");
+      const secondTarget = join(secondParent, "SKILL.md");
+      await mkdir(dirname(sourcePath), { recursive: true });
+      await mkdir(dirname(oldSource), { recursive: true });
+      await mkdir(firstParent, { recursive: true });
+      await mkdir(secondParent, { recursive: true });
+      await writeFile(sourcePath, "new source", "utf8");
+      await writeFile(oldSource, "old source", "utf8");
+      await symlink(firstParent, logicalParent, "dir");
+      await symlink(oldSource, firstTarget, "file");
+      await symlink(sourcePath, secondTarget, "file");
+      const mapping: PlannedFile = {
+        skillName: "review",
+        sourcePath,
+        targetPath,
+        linkValue: sourcePath,
+        attributions: [CLAUDE],
+      };
+      const priorEntry = {
+        ...stateEntry(mapping, oldSource),
+        sourcePath: oldSource,
+      };
+      const loaded = loadedState(root, [priorEntry]);
+      const input = resolution(targetRoot, [mapping]);
+      const plan = await buildSyncPlan(input, loaded);
+      expect(plan.operations[0]?.kind).toBe("update");
+
+      const result = await applySyncPlan(plan, input, loaded, root, {
+        persistState: async () => {
+          await rm(logicalParent);
+          await symlink(secondParent, logicalParent, "dir");
+          throw new Error("simulated state failure");
+        },
+      });
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        failure: {
+          phase: "parent",
+          message: expect.stringContaining("Physical target changed"),
+        },
+      });
+      expect(await readlink(firstTarget)).toBe(sourcePath);
+      expect(await readlink(secondTarget)).toBe(sourcePath);
     });
   });
 
@@ -873,7 +1180,10 @@ function resolution(
       });
     }
   }
+  const sourceRoot = sourceRootForMappings(mappings);
   return {
+    sourceRoot,
+    sourceRootIdentity: sourceIdentity(sourceRoot),
     placements: [...byAttribution.values()],
     mappings,
     satisfiedPlacements: [],
@@ -883,10 +1193,28 @@ function resolution(
 
 function emptyResolution(): PlacementResolution {
   return {
+    sourceRoot: process.cwd(),
+    sourceRootIdentity: sourceIdentity(process.cwd()),
     placements: [],
     mappings: [],
     satisfiedPlacements: [],
     warnings: [],
+  };
+}
+
+function sourceRootForMappings(mappings: readonly PlannedFile[]): string {
+  const mapping = mappings[0];
+  return mapping === undefined
+    ? process.cwd()
+    : dirname(dirname(mapping.sourcePath));
+}
+
+function sourceIdentity(sourceRoot: string): SourceRootIdentity {
+  const stats = lstatSync(sourceRoot);
+  return {
+    realPath: realpathSync(sourceRoot),
+    device: stats.dev,
+    inode: stats.ino,
   };
 }
 
@@ -911,6 +1239,7 @@ function loadedState(
     path: statePathForProject(root),
     exists: options.exists ?? false,
     originalText: options.originalText,
+    warnings: [],
   };
 }
 

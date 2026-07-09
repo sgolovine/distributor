@@ -1,5 +1,5 @@
 import { constants, type Stats } from "node:fs";
-import { lstat, open, readdir } from "node:fs/promises";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
 import { isMap, isScalar, parseDocument } from "yaml";
@@ -36,8 +36,15 @@ export interface SkillValidationProblem {
   message: string;
 }
 
+export interface SourceRootIdentity {
+  realPath: string;
+  device: number;
+  inode: number;
+}
+
 export interface SkillDiscoveryResult {
   sourceRoot: string;
+  sourceRootIdentity: SourceRootIdentity;
   skills: SourceSkill[];
   warnings: SkillDiscoveryWarning[];
 }
@@ -91,6 +98,10 @@ export async function discoverSkills(
       },
     ]);
   }
+  const sourceRootIdentity = await captureSourceRootIdentity(
+    sourceRoot,
+    rootStats,
+  );
 
   const problems: SkillValidationProblem[] = [];
   const warnings: SkillDiscoveryWarning[] = [];
@@ -136,7 +147,9 @@ export async function discoverSkills(
     throw new SkillValidationError(problems, warnings);
   }
 
-  return { sourceRoot, skills, warnings };
+  await requireSourceRootIdentity(sourceRoot, sourceRootIdentity);
+
+  return { sourceRoot, sourceRootIdentity, skills, warnings };
 }
 
 async function inspectSourceRoot(sourceRoot: string): Promise<Stats> {
@@ -150,6 +163,58 @@ async function inspectSourceRoot(sourceRoot: string): Promise<Stats> {
       },
     ]);
   }
+}
+
+async function captureSourceRootIdentity(
+  sourceRoot: string,
+  initialStats: Stats,
+): Promise<SourceRootIdentity> {
+  try {
+    const realPath = await realpath(sourceRoot);
+    const currentStats = await lstat(sourceRoot);
+    if (!currentStats.isDirectory() || !sameNodeIdentity(initialStats, currentStats)) {
+      throw new Error("the source root changed while its identity was captured");
+    }
+    return {
+      realPath,
+      device: currentStats.dev,
+      inode: currentStats.ino,
+    };
+  } catch (error) {
+    throw sourceRootIdentityError(sourceRoot, error);
+  }
+}
+
+async function requireSourceRootIdentity(
+  sourceRoot: string,
+  expected: SourceRootIdentity,
+): Promise<void> {
+  try {
+    const stats = await lstat(sourceRoot);
+    const realPath = await realpath(sourceRoot);
+    if (
+      !stats.isDirectory() ||
+      stats.dev !== expected.device ||
+      stats.ino !== expected.inode ||
+      realPath !== expected.realPath
+    ) {
+      throw new Error("the source root changed while skills were being discovered");
+    }
+  } catch (error) {
+    throw sourceRootIdentityError(sourceRoot, error);
+  }
+}
+
+function sourceRootIdentityError(
+  sourceRoot: string,
+  error: unknown,
+): SkillValidationError {
+  return new SkillValidationError([
+    {
+      path: sourceRoot,
+      message: `Unable to establish a stable source root: ${errorMessage(error)}.`,
+    },
+  ]);
 }
 
 async function inspectSkill(
@@ -390,13 +455,13 @@ async function readRegularSourceFile(path: string): Promise<string> {
   try {
     const opened = await handle.stat();
     const visible = await lstat(path);
-    if (!visible.isFile() || !sameFileIdentity(opened, visible)) {
+    if (!visible.isFile() || !sameNodeIdentity(opened, visible)) {
       throw new Error("SKILL.md changed while it was being opened.");
     }
 
     const contents = await handle.readFile({ encoding: "utf8" });
     const after = await lstat(path);
-    if (!after.isFile() || !sameFileIdentity(opened, after)) {
+    if (!after.isFile() || !sameNodeIdentity(opened, after)) {
       throw new Error("SKILL.md changed while it was being read.");
     }
     return contents;
@@ -405,7 +470,7 @@ async function readRegularSourceFile(path: string): Promise<string> {
   }
 }
 
-function sameFileIdentity(left: Stats, right: Stats): boolean {
+function sameNodeIdentity(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }
 

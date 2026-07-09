@@ -330,10 +330,17 @@ describe("managed state", () => {
 
   it("preserves and warns about an ineffective existing ignore file", async () => {
     await useFixture(async (root) => {
-      const loaded = await loadManagedState(root);
       const ignorePath = join(root, ".distributor", ".gitignore");
       await mkdir(dirname(ignorePath), { recursive: true });
       await writeFile(ignorePath, "custom-rule\n", "utf8");
+      const loaded = await loadManagedState(root);
+
+      expect(loaded.warnings).toEqual([
+        expect.objectContaining({
+          path: ignorePath,
+          message: expect.stringContaining("does not ignore state.json"),
+        }),
+      ]);
 
       const result = await persistManagedState(loaded, stateFixture(root), root);
 

@@ -23,6 +23,7 @@ import {
   pathComparisonKey,
   pathsAreEquivalent,
 } from "../filesystem/paths.js";
+import type { SourceRootIdentity } from "../skills/discover.js";
 import type { ReadOnlySyncPlan } from "./plan.js";
 import type {
   PlacementResolution,
@@ -60,6 +61,7 @@ export interface ApplySyncPlanOptions {
   readonly harnessId?: string;
   readonly platform?: NodeJS.Platform;
   readonly filesystem?: Partial<ApplyFilesystem>;
+  readonly persistState?: typeof persistManagedState;
 }
 
 export type ApplyOperationStatus =
@@ -193,6 +195,7 @@ export async function applySyncPlan(
         operation,
         priorEntry,
         resolution,
+        plan.sourceRootIdentity,
         filesystem,
         platform,
         reservedPhysicalTargets,
@@ -240,9 +243,10 @@ export async function applySyncPlan(
   let statePersisted = false;
   let stateWritten = false;
   let persistenceWarnings: readonly PlanNotice[] = [];
+  let returnedState = nextState;
 
   try {
-    const persistence = await persistManagedState(
+    const persistence = await (options.persistState ?? persistManagedState)(
       loadedState,
       nextState,
       projectRoot,
@@ -253,11 +257,50 @@ export async function applySyncPlan(
   } catch (error) {
     const persistenceFailure = stateFailure(loadedState.path, error);
     failures.push(persistenceFailure);
-    for (const [index, result] of operationResults.entries()) {
-      if (result.status !== "adopted") {
-        continue;
-      }
-      operationResults[index] = {
+    await reconcileAfterPersistenceFailure(
+      operationResults,
+      priorByTarget,
+      persistenceFailure,
+      failures,
+      resolution,
+      reservedPhysicalTargets,
+      filesystem,
+      platform,
+    );
+    returnedState = {
+      version: 1,
+      entries: [...loadedState.entries].sort(compareStateEntries),
+    };
+  }
+
+  return {
+    operations: operationResults,
+    failures,
+    warnings: [...plan.warnings, ...persistenceWarnings],
+    nextState: returnedState,
+    statePersisted,
+    stateWritten,
+  };
+}
+
+async function reconcileAfterPersistenceFailure(
+  results: ApplyOperationResult[],
+  priorByTarget: ReadonlyMap<string, ManagedStateEntry>,
+  persistenceFailure: ApplyFailure,
+  failures: ApplyFailure[],
+  resolution: PlacementResolution,
+  reservedPhysicalTargets: ReadonlyMap<string, string>,
+  filesystem: ApplyFilesystem,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const result = results[index];
+    if (result === undefined) {
+      continue;
+    }
+
+    if (result.status === "adopted") {
+      results[index] = {
         operation: result.operation,
         status: "failed",
         targetLinkMutated: false,
@@ -266,17 +309,214 @@ export async function applySyncPlan(
           persistenceFailure,
         ),
       };
+      continue;
+    }
+
+    const failedMutation =
+      result.status === "failed" &&
+      result.targetLinkMutated &&
+      (result.operation.kind === "create" || result.operation.kind === "update");
+    if (
+      result.status !== "created" &&
+      result.status !== "updated" &&
+      !failedMutation
+    ) {
+      continue;
+    }
+
+    const priorEntry = priorByTarget.get(
+      pathComparisonKey(result.operation.targetPath),
+    );
+    if (priorEntry === undefined) {
+      continue;
+    }
+
+    try {
+      if (failedMutation) {
+        const current = await inspectTarget(
+          result.operation.targetPath,
+          filesystem,
+        );
+        if (current.kind === "absent") {
+          continue;
+        }
+      }
+      const placements = placementsForOperation(
+        result.operation,
+        resolution.placements,
+      );
+      if (placements.length === 0) {
+        throw new OperationFailure(
+          "parent",
+          "No resolved placement owns this operation during rollback.",
+          "Review the target and rebuild the sync plan before retrying.",
+        );
+      }
+      const expectedPhysicalTarget = reservedPhysicalTargetKey(
+        result.operation,
+        reservedPhysicalTargets,
+      );
+      if (expectedPhysicalTarget === undefined) {
+        throw new OperationFailure(
+          "parent",
+          "The physical target used during apply was not recorded for rollback.",
+          "Review the target and rebuild the sync plan before retrying.",
+        );
+      }
+      await rollbackManagedMutation(
+        result.operation,
+        priorEntry,
+        placements,
+        expectedPhysicalTarget,
+        filesystem,
+        platform,
+      );
+      if (failedMutation) {
+        continue;
+      }
+      results[index] = {
+        operation: result.operation,
+        status: "failed",
+        targetLinkMutated: true,
+        failure: operationPersistenceFailure(
+          result.operation,
+          persistenceFailure,
+        ),
+      };
+    } catch (error) {
+      const failure = operationFailure(result.operation, error);
+      failures.push(failure);
+      if (failedMutation) {
+        continue;
+      }
+      results[index] = {
+        operation: result.operation,
+        status: "failed",
+        targetLinkMutated: true,
+        failure,
+      };
     }
   }
+}
 
-  return {
-    operations: operationResults,
-    failures,
-    warnings: [...plan.warnings, ...persistenceWarnings],
-    nextState,
-    statePersisted,
-    stateWritten,
-  };
+async function rollbackManagedMutation(
+  operation: PlanOperation,
+  priorEntry: ManagedStateEntry,
+  placements: readonly ResolvedTargetPlacement[],
+  expectedPhysicalTarget: string,
+  filesystem: ApplyFilesystem,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  await prepareAndRevalidateParents(
+    operation,
+    placements,
+    false,
+    filesystem,
+  );
+  await requirePhysicalRollbackTarget(
+    operation,
+    expectedPhysicalTarget,
+    filesystem,
+  );
+  const current = await inspectTarget(operation.targetPath, filesystem);
+  if (current.kind === "symlink" && current.linkValue === priorEntry.linkValue) {
+    return;
+  }
+  if (current.kind !== "symlink" || current.linkValue !== operation.linkValue) {
+    throw new OperationFailure(
+      "target",
+      `Could not roll back the managed link because the target changed: ${operation.targetPath}`,
+      "Review the target race manually; Distributor did not overwrite the changed path.",
+    );
+  }
+
+  try {
+    await filesystem.unlink(operation.targetPath);
+  } catch (error) {
+    throw new OperationFailure(
+      "target",
+      `Could not remove the new link during state-failure rollback: ${operation.targetPath}`,
+      "Fix the target permissions and rerun sync; the on-disk state still records the prior link.",
+      { cause: error },
+    );
+  }
+
+  const afterRemoval = await inspectTarget(operation.targetPath, filesystem);
+  if (afterRemoval.kind !== "absent") {
+    throw new OperationFailure(
+      "target",
+      `Target changed during state-failure rollback: ${operation.targetPath}`,
+      "Review the raced target manually; Distributor will not overwrite it.",
+      { targetLinkMutated: true },
+    );
+  }
+
+  if (operation.kind === "create") {
+    return;
+  }
+
+  await prepareAndRevalidateParents(
+    operation,
+    placements,
+    false,
+    filesystem,
+  );
+  await requirePhysicalRollbackTarget(
+    operation,
+    expectedPhysicalTarget,
+    filesystem,
+  );
+
+  try {
+    await filesystem.symlink(
+      priorEntry.linkValue,
+      operation.targetPath,
+      "file",
+    );
+  } catch (error) {
+    throw symlinkFailure(operation.targetPath, error, platform, true);
+  }
+
+  const restored = await inspectTarget(operation.targetPath, filesystem);
+  if (restored.kind !== "symlink" || restored.linkValue !== priorEntry.linkValue) {
+    throw new OperationFailure(
+      "target",
+      `Prior managed link could not be verified after rollback: ${operation.targetPath}`,
+      "Review the target manually before rerunning sync.",
+      { targetLinkMutated: true },
+    );
+  }
+}
+
+function reservedPhysicalTargetKey(
+  operation: PlanOperation,
+  reserved: ReadonlyMap<string, string>,
+): string | undefined {
+  const logicalKey = pathComparisonKey(operation.targetPath);
+  for (const [physicalKey, targetPath] of reserved) {
+    if (pathComparisonKey(targetPath) === logicalKey) {
+      return physicalKey;
+    }
+  }
+  return undefined;
+}
+
+async function requirePhysicalRollbackTarget(
+  operation: PlanOperation,
+  expectedPhysicalTarget: string,
+  filesystem: ApplyFilesystem,
+): Promise<void> {
+  const currentPhysicalTarget = await resolvePhysicalTargetPath(
+    operation.targetPath,
+    filesystem,
+  );
+  if (pathComparisonKey(currentPhysicalTarget) !== expectedPhysicalTarget) {
+    throw new OperationFailure(
+      "parent",
+      `Physical target changed before state-failure rollback: ${operation.targetPath}`,
+      "Restore the original parent chain and rerun sync; Distributor did not mutate the redirected target.",
+    );
+  }
 }
 
 function initialStateEntries(
@@ -330,6 +570,7 @@ async function applyOperation(
   operation: PlanOperation,
   priorEntry: ManagedStateEntry | undefined,
   resolution: PlacementResolution,
+  sourceRootIdentity: SourceRootIdentity,
   filesystem: ApplyFilesystem,
   platform: NodeJS.Platform,
   reservedPhysicalTargets: Map<string, string>,
@@ -345,7 +586,12 @@ async function applyOperation(
     await requireExactOwnership(operation, priorEntry, filesystem);
   }
 
-  await requireRegularSource(operation, filesystem);
+  await requireRegularSource(
+    operation,
+    resolution.sourceRoot,
+    sourceRootIdentity,
+    filesystem,
+  );
 
   const placements = placementsForOperation(operation, resolution.placements);
   if (placements.length === 0) {
@@ -397,11 +643,74 @@ async function applyOperation(
 
 async function requireRegularSource(
   operation: PlanOperation,
+  sourceRoot: string,
+  expectedSourceRoot: SourceRootIdentity,
   filesystem: ApplyFilesystem,
 ): Promise<void> {
+  if (!isStrictChildPath(sourceRoot, operation.sourcePath)) {
+    throw new OperationFailure(
+      "target",
+      `Source file escapes the canonical source root: ${operation.sourcePath}`,
+      "Rebuild the sync plan from files contained by the configured source root.",
+    );
+  }
+
+  let sourceRootStats: Stats;
+  let currentRealSourceRoot: string;
+  try {
+    sourceRootStats = await filesystem.lstat(sourceRoot);
+    currentRealSourceRoot = await filesystem.realpath(sourceRoot);
+  } catch (error) {
+    throw new OperationFailure(
+      "target",
+      `Source root changed or disappeared after planning: ${sourceRoot}`,
+      "Restore the real source directory and rebuild the sync plan.",
+      { cause: error },
+    );
+  }
+  if (
+    !sourceRootStats.isDirectory() ||
+    sourceRootStats.dev !== expectedSourceRoot.device ||
+    sourceRootStats.ino !== expectedSourceRoot.inode ||
+    !pathsAreEquivalent(currentRealSourceRoot, expectedSourceRoot.realPath)
+  ) {
+    throw new OperationFailure(
+      "target",
+      `Source root identity changed after planning: ${sourceRoot}`,
+      "Restore the original real source directory and rebuild the sync plan.",
+    );
+  }
+
+  const sourceParent = dirname(operation.sourcePath);
+  const relativeParent = relative(sourceRoot, sourceParent);
+  let currentParent = sourceRoot;
+  for (const segment of relativeParent === "" ? [] : relativeParent.split(sep)) {
+    currentParent = resolve(currentParent, segment);
+    let parentStats: Stats;
+    try {
+      parentStats = await filesystem.lstat(currentParent);
+    } catch (error) {
+      throw new OperationFailure(
+        "target",
+        `Source parent changed or disappeared after planning: ${currentParent}`,
+        "Restore real source directories and rebuild the sync plan.",
+        { cause: error },
+      );
+    }
+    if (parentStats.isSymbolicLink() || !parentStats.isDirectory()) {
+      throw new OperationFailure(
+        "target",
+        `Source parent changed after planning and is not a real directory: ${currentParent}`,
+        "Restore real source directories; Distributor will not traverse source symlinks.",
+      );
+    }
+  }
+
   let stats: Stats;
+  let physicalSource: string;
   try {
     stats = await filesystem.lstat(operation.sourcePath);
+    physicalSource = await filesystem.realpath(operation.sourcePath);
   } catch (error) {
     throw new OperationFailure(
       "target",
@@ -419,6 +728,13 @@ async function requireRegularSource(
       "target",
       `Source file changed after planning and is now ${nodeType}: ${operation.sourcePath}`,
       "Restore a regular source file; Distributor will not link through source symlinks.",
+    );
+  }
+  if (!isStrictChildPath(expectedSourceRoot.realPath, physicalSource)) {
+    throw new OperationFailure(
+      "target",
+      `Source file resolves outside the canonical source root: ${operation.sourcePath}`,
+      "Restore the source file beneath the real source root and rebuild the plan.",
     );
   }
 }
@@ -1163,7 +1479,7 @@ function stateFailure(statePath: string, error: unknown): ApplyFailure {
             operation: "persist managed state",
             context: { statePath },
             correction:
-              "Fix state-directory permissions and rerun sync so exact links can be adopted.",
+              "Fix state-directory permissions and rerun sync; Distributor restores prior managed links when safe.",
             cause: error,
           },
         );
@@ -1173,7 +1489,7 @@ function stateFailure(statePath: string, error: unknown): ApplyFailure {
     message: failure.message,
     correction:
       failure.correction ??
-      "Fix state-directory permissions and rerun sync so exact links can be adopted.",
+      "Fix state-directory permissions and rerun sync; Distributor restores prior managed links when safe.",
     ...(failure.cause === undefined ? {} : { cause: failure.cause }),
   };
 }

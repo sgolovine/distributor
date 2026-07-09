@@ -15,17 +15,22 @@ describe("Distributor CLI", () => {
   it("renders identical root help for no command and explicit help", async () => {
     const first = testContext();
     const second = testContext();
+    const short = testContext();
 
     expect(await first.run([])).toBe(0);
     expect(await second.run(["help"])).toBe(0);
+    expect(await short.run(["-h"])).toBe(0);
 
     expect(first.stdout()).toBe(second.stdout());
+    expect(short.stdout()).toBe(second.stdout());
     expect(first.stdout()).toContain("Commands:");
     expect(first.stdout()).toContain("distributor sync --dry-run");
     expect(first.stdout()).toContain("Exit codes:");
     expect(first.stdout()).toContain("trusted executable code");
     expect(first.runInit).not.toHaveBeenCalled();
     expect(first.runSync).not.toHaveBeenCalled();
+    expect(short.runInit).not.toHaveBeenCalled();
+    expect(short.runSync).not.toHaveBeenCalled();
   });
 
   it("renders contextual command help without running commands", async () => {
@@ -44,30 +49,38 @@ describe("Distributor CLI", () => {
 
   it("prints both version forms exactly without loading project state", async () => {
     const option = testContext();
+    const short = testContext();
     const command = testContext();
 
     expect(await option.run(["--version"])).toBe(0);
+    expect(await short.run(["-V"])).toBe(0);
     expect(await command.run(["version"])).toBe(0);
 
     expect(option.stdout()).toBe(`${VERSION}\n`);
+    expect(short.stdout()).toBe(`${VERSION}\n`);
     expect(command.stdout()).toBe(`${VERSION}\n`);
     expect(option.runInit).not.toHaveBeenCalled();
     expect(option.runSync).not.toHaveBeenCalled();
+    expect(short.runInit).not.toHaveBeenCalled();
+    expect(short.runSync).not.toHaveBeenCalled();
   });
 
-  it("passes init defaults explicitly and renders its result", async () => {
-    const context = testContext();
+  it.each(["-y", "--yes"])(
+    "passes init %s explicitly and renders its result",
+    async (flag) => {
+      const context = testContext();
 
-    expect(await context.run(["init", "-y"])).toBe(0);
+      expect(await context.run(["init", flag])).toBe(0);
 
-    expect(context.runInit).toHaveBeenCalledWith({
-      cwd: "/workspace",
-      yes: true,
-      isInteractive: false,
-    });
-    expect(context.stdout()).toContain("Initialized Distributor at /project.");
-    expect(context.stdout()).toContain("config: created");
-  });
+      expect(context.runInit).toHaveBeenCalledWith({
+        cwd: "/workspace",
+        yes: true,
+        isInteractive: false,
+      });
+      expect(context.stdout()).toContain("Initialized Distributor at /project.");
+      expect(context.stdout()).toContain("config: created");
+    },
+  );
 
   it("passes sync flags and renders deterministic dry-run summaries", async () => {
     const context = testContext();
@@ -309,6 +322,11 @@ function syncResult(
     sourceRoot: "/project/.agents/skills",
     plan: {
       applicable: true,
+      sourceRootIdentity: {
+        realPath: "/project/.agents/skills",
+        device: 1,
+        inode: 1,
+      },
       operations: [],
       satisfiedPlacements: [
         {
