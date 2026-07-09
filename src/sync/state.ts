@@ -1,5 +1,5 @@
 import { lstat, mkdir, readFile, readlink, writeFile } from "node:fs/promises";
-import { dirname, join, matchesGlob } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   DistributorError,
@@ -503,12 +503,18 @@ function ignoreFileCoversState(contents: string): boolean {
       continue;
     }
 
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    const expression = escaped
+      .replaceAll("**", "\0")
+      .replaceAll("*", "[^/]*")
+      .replaceAll("?", "[^/]")
+      .replaceAll("\0", ".*");
     try {
-      if (matchesGlob("state.json", pattern)) {
+      if (new RegExp(`^${expression}$`).test("state.json")) {
         ignored = !negated;
       }
     } catch {
-      // Invalid patterns do not establish that state.json is ignored.
+      // An invalid pattern does not establish that state.json is ignored.
     }
   }
 
