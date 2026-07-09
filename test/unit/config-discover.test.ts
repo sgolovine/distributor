@@ -82,6 +82,18 @@ describe("config discovery", () => {
     });
   });
 
+  it("rejects a non-file at a supported config path without loading it", async () => {
+    await useFixture(async (root) => {
+      await mkdir(join(root, "distributor.config.json"));
+
+      await expect(discoverConfig(root)).rejects.toMatchObject({
+        category: "config",
+        exitCode: 2,
+        correction: expect.stringContaining("regular"),
+      });
+    });
+  });
+
   it("uses the invocation directory as a non-Git init root", async () => {
     await useFixture(async (root) => {
       const nested = join(root, "nested");

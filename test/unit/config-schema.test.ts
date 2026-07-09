@@ -23,4 +23,11 @@ describe("DistributorConfigSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("applies the runtime source default", () => {
+    expect(DistributorConfigSchema.parse({ harnesses: ["codex"] })).toEqual({
+      source: ".agents/skills",
+      harnesses: ["codex"],
+    });
+  });
 });

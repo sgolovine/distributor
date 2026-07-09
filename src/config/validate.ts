@@ -16,16 +16,15 @@ import {
 import {
   pathComparisonKey,
   resolveConfigPath,
+  type PathStyle,
 } from "../filesystem/paths.js";
 import type { DiscoveredConfig } from "./discover.js";
 import { loadSelectedConfig } from "./load.js";
 import {
   DistributorConfigSchema,
-  type DistributorConfig,
+  type ParsedDistributorConfig,
   type TargetSelection,
 } from "./schema.js";
-
-const DEFAULT_SOURCE = ".agents/skills";
 
 export interface ValidatedTargetSelection {
   readonly placement: HarnessPlacement;
@@ -48,6 +47,7 @@ export interface ValidatedProjectConfig {
 export interface ValidateConfigOptions {
   readonly homeDirectory?: string;
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly pathStyle?: PathStyle;
 }
 
 function valueAtPath(value: unknown, path: readonly PropertyKey[]): unknown {
@@ -107,7 +107,10 @@ function flattenSchemaIssues(
   });
 }
 
-function parseConfigShape(rawConfig: unknown, configPath: string): DistributorConfig {
+function parseConfigShape(
+  rawConfig: unknown,
+  configPath: string,
+): ParsedDistributorConfig {
   const result = DistributorConfigSchema.safeParse(rawConfig);
   if (result.success) {
     return result.data;
@@ -140,9 +143,14 @@ function resolveSelectedPlacementPath(
   projectRoot: string,
   homeDirectory: string,
   environment: Readonly<Record<string, string | undefined>>,
+  pathStyle: PathStyle | undefined,
 ): string {
   if (selection.path !== undefined) {
-    return resolveConfigPath(selection.path, { projectRoot, homeDirectory });
+    return resolveConfigPath(selection.path, {
+      projectRoot,
+      homeDirectory,
+      ...(pathStyle === undefined ? {} : { style: pathStyle }),
+    });
   }
 
   const environmentPath = placement.environmentVariables
@@ -152,6 +160,7 @@ function resolveSelectedPlacementPath(
   return resolveConfigPath(environmentPath ?? placement.defaultPath, {
     projectRoot,
     homeDirectory,
+    ...(pathStyle === undefined ? {} : { style: pathStyle }),
   });
 }
 
@@ -169,16 +178,17 @@ export function validateProjectConfig(
   let sourceRoot: string | undefined;
 
   try {
-    sourceRoot = resolveConfigPath(parsed.source ?? DEFAULT_SOURCE, {
+    sourceRoot = resolveConfigPath(parsed.source, {
       projectRoot: discovered.projectRoot,
       homeDirectory,
+      ...(options.pathStyle === undefined ? {} : { style: options.pathStyle }),
     });
   } catch (error) {
     const failure = error as DistributorError;
     issues.push({
       message: failure.message,
       path: "source",
-      received: parsed.source ?? DEFAULT_SOURCE,
+      received: parsed.source,
       expected: "a non-empty project-relative or supported expanded path",
       correction: failure.correction ?? "Use a valid source path.",
     });
@@ -280,6 +290,7 @@ export function validateProjectConfig(
           discovered.projectRoot,
           homeDirectory,
           environment,
+          options.pathStyle,
         );
       } catch (error) {
         const failure = error as DistributorError;
@@ -293,7 +304,7 @@ export function validateProjectConfig(
         continue;
       }
 
-      const key = pathComparisonKey(targetRoot);
+      const key = pathComparisonKey(targetRoot, options.pathStyle);
       const priorTargetIndex = seenTargetRoots.get(key);
       if (priorTargetIndex !== undefined) {
         issues.push({

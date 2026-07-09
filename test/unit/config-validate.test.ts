@@ -10,12 +10,14 @@ const discovered = {
   projectRoot: "/project",
 };
 
+const options = { homeDirectory: "/home/test", pathStyle: "posix" as const };
+
 describe("validateProjectConfig", () => {
   it("applies the source default and sorts available harnesses", () => {
     const config = validateProjectConfig(
       { harnesses: ["opencode", "codex", "claude-code"] },
       discovered,
-      { homeDirectory: "/home/test" },
+      options,
     );
 
     expect(config.sourceRoot).toBe(join("/project", ".agents/skills"));
@@ -36,6 +38,7 @@ describe("validateProjectConfig", () => {
       validateProjectConfig(
         { harnesses: ["codex", "codex", "cursor", "invented"] },
         discovered,
+        options,
       );
     } catch (error) {
       expect(error).toBeInstanceOf(DistributorError);
@@ -62,7 +65,7 @@ describe("validateProjectConfig", () => {
         ],
       },
       discovered,
-      { homeDirectory: "/home/test" },
+      options,
     );
 
     expect(config.harnesses[0]?.targets?.[0]).toMatchObject({
@@ -85,6 +88,7 @@ describe("validateProjectConfig", () => {
           ],
         },
         discovered,
+        options,
       ),
     ).toThrow(/distributor config/i);
   });
@@ -104,6 +108,7 @@ describe("validateProjectConfig", () => {
           ],
         },
         discovered,
+        options,
       );
       expect.fail("Expected duplicate targets to fail");
     } catch (error) {
@@ -120,6 +125,7 @@ describe("validateProjectConfig", () => {
       validateProjectConfig(
         { source: "$UNSUPPORTED/skills", harnesses: ["codex"] },
         discovered,
+        options,
       );
       expect.fail("Expected invalid expansion to fail");
     } catch (error) {
@@ -141,6 +147,7 @@ describe("validateProjectConfig", () => {
           ],
         },
         discovered,
+        options,
       );
       expect.fail("Expected strict parsing to fail");
     } catch (error) {

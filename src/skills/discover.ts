@@ -4,6 +4,7 @@ import { join, relative, resolve } from "node:path";
 
 import { isMap, isScalar, parseDocument } from "yaml";
 
+import { DistributorError } from "../errors.js";
 import {
   SkillFrontmatterSchema,
   type SkillFrontmatter,
@@ -41,7 +42,7 @@ export interface SkillDiscoveryResult {
   warnings: SkillDiscoveryWarning[];
 }
 
-export class SkillValidationError extends Error {
+export class SkillValidationError extends DistributorError {
   readonly problems: SkillValidationProblem[];
   readonly warnings: SkillDiscoveryWarning[];
 
@@ -49,15 +50,26 @@ export class SkillValidationError extends Error {
     problems: SkillValidationProblem[],
     warnings: SkillDiscoveryWarning[] = [],
   ) {
-    super(
-      [
+    const message = [
         `Source skill validation failed with ${problems.length} problem${problems.length === 1 ? "" : "s"}:`,
         ...problems.map((problem) => {
           const field = problem.field === undefined ? "" : ` (${problem.field})`;
           return `- ${problem.path}${field}: ${problem.message}`;
         }),
-      ].join("\n"),
-    );
+      ].join("\n");
+    super("source", message, {
+      operation: "validate source skills",
+      ...(problems[0] === undefined
+        ? {}
+        : { context: { sourcePath: problems[0].skillPath ?? problems[0].path } }),
+      correction:
+        "Correct every reported source problem without replacing content with symlinks, then rerun Distributor.",
+      issues: problems.map((problem) => ({
+        message: problem.message,
+        path: problem.path,
+        correction: "Correct this source entry or frontmatter field.",
+      })),
+    });
     this.name = "SkillValidationError";
     this.problems = problems;
     this.warnings = warnings;

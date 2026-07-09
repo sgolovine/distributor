@@ -172,6 +172,11 @@ describe("discoverSkills", () => {
       await expect(discoverSkills(missing)).rejects.toBeInstanceOf(
         SkillValidationError,
       );
+      await expect(discoverSkills(missing)).rejects.toMatchObject({
+        category: "source",
+        exitCode: 1,
+        correction: expect.stringContaining("Correct"),
+      });
       await expect(discoverSkills(file)).rejects.toThrow(
         "source root must be a directory",
       );

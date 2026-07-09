@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const DEFAULT_SOURCE_PATH = ".agents/skills";
+
 export const TargetSelectionSchema = z
   .object({
     placement: z.string().min(1).optional(),
@@ -19,11 +21,12 @@ export const HarnessSelectionSchema = z.union([
 
 export const DistributorConfigSchema = z
   .object({
-    source: z.string().min(1).optional(),
+    source: z.string().min(1).default(DEFAULT_SOURCE_PATH),
     harnesses: z.array(HarnessSelectionSchema).min(1),
   })
   .strict();
 
-export type DistributorConfig = z.infer<typeof DistributorConfigSchema>;
+export type DistributorConfig = z.input<typeof DistributorConfigSchema>;
+export type ParsedDistributorConfig = z.output<typeof DistributorConfigSchema>;
 export type HarnessSelection = z.infer<typeof HarnessSelectionSchema>;
 export type TargetSelection = z.infer<typeof TargetSelectionSchema>;

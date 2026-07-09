@@ -10,15 +10,39 @@ export interface DiscoveredConfig {
   searchedBoundary: string;
 }
 
-async function pathExists(path: string): Promise<boolean> {
+async function isSupportedConfigFile(path: string): Promise<boolean> {
   try {
-    await lstat(path);
+    const stats = await lstat(path);
+    if (!stats.isFile()) {
+      throw new DistributorError(
+        "config",
+        `Supported config path is not a regular file: ${path}`,
+        {
+          operation: "discover config",
+          context: { configPath: path },
+          correction:
+            "Move this filesystem node aside and create a regular Distributor config file.",
+        },
+      );
+    }
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return false;
     }
-    throw error;
+    if (error instanceof DistributorError) {
+      throw error;
+    }
+    throw new DistributorError(
+      "filesystem",
+      `Could not inspect config candidate: ${path}`,
+      {
+        operation: "discover config",
+        context: { configPath: path },
+        correction: "Fix path permissions and rerun Distributor.",
+        cause: error,
+      },
+    );
   }
 }
 
@@ -26,7 +50,7 @@ export async function supportedConfigsAt(directory: string): Promise<string[]> {
   const candidates = SUPPORTED_CONFIG_FILENAMES.map((name) =>
     join(directory, name),
   );
-  const present = await Promise.all(candidates.map(pathExists));
+  const present = await Promise.all(candidates.map(isSupportedConfigFile));
 
   return candidates.filter((_, index) => present[index]);
 }
@@ -44,7 +68,16 @@ export async function findGitWorktreeRoot(
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
+        throw new DistributorError(
+          "filesystem",
+          `Could not inspect Git worktree marker: ${join(current, ".git")}`,
+          {
+            operation: "find Git worktree root",
+            context: { path: join(current, ".git") },
+            correction: "Fix path permissions and rerun Distributor.",
+            cause: error,
+          },
+        );
       }
     }
 

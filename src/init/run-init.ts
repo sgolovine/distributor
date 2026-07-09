@@ -17,13 +17,13 @@ import {
   validateProjectConfig,
   type ValidateConfigOptions,
 } from "../config/validate.js";
+import { DEFAULT_SOURCE_PATH } from "../config/schema.js";
 import { DistributorError } from "../errors.js";
 import {
   isStrictChildPath,
   pathsAreEquivalent,
 } from "../filesystem/paths.js";
 
-const DEFAULT_SOURCE = ".agents/skills";
 const GENERATED_CONFIG_NAME = "distributor.config.json";
 const STATE_DIRECTORY_NAME = ".distributor";
 const STATE_IGNORE_NAME = ".gitignore";
@@ -266,9 +266,9 @@ async function buildInitPlan(options: RunInitOptions): Promise<InitPlan> {
 
     const selections =
       options.yes === true
-        ? { source: DEFAULT_SOURCE, harnesses: defaultHarnesses }
+        ? { source: DEFAULT_SOURCE_PATH, harnesses: defaultHarnesses }
         : await (options.prompt ?? promptForInitSelections)({
-            defaultSource: DEFAULT_SOURCE,
+            defaultSource: DEFAULT_SOURCE_PATH,
             defaultHarnesses,
             harnesses: availableHarnessChoices,
           });
