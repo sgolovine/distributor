@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "codex",
-  displayName: "Codex CLI",
+  name: "kilo-code",
+  displayName: "Kilo Code",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -12,6 +12,14 @@ const config = {
       item: "skills",
       support: "native",
       scope: "project",
+      defaultPath: ".kilo/skills",
+      createIfMissing: true,
+    },
+    {
+      id: "agents-project",
+      item: "skills",
+      support: "compatibility",
+      scope: "project",
       defaultPath: ".agents/skills",
       createIfMissing: true,
     },
@@ -20,19 +28,11 @@ const config = {
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.agents/skills",
+      defaultPath: "~/.kilo/skills",
       createIfMissing: true,
     },
-    {
-      id: "admin",
-      item: "skills",
-      support: "native",
-      scope: "admin",
-      defaultPath: "/etc/codex/skills",
-      createIfMissing: false,
-    },
   ],
-  sources: ["https://developers.openai.com/codex/skills"],
+  sources: ["https://kilo.ai/docs/customize/skills"],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

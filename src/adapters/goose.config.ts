@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "opencode",
-  displayName: "OpenCode",
+  name: "goose",
+  displayName: "Goose",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -12,15 +12,16 @@ const config = {
       item: "skills",
       support: "native",
       scope: "project",
-      defaultPath: ".opencode/skills",
+      defaultPath: ".agents/skills",
       createIfMissing: true,
+      notes: "Requires the built-in Summon extension in goose v1.25.0+.",
     },
     {
-      id: "agents-project",
+      id: "goose-project",
       item: "skills",
       support: "compatibility",
       scope: "project",
-      defaultPath: ".agents/skills",
+      defaultPath: ".goose/skills",
       createIfMissing: true,
     },
     {
@@ -36,14 +37,6 @@ const config = {
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.config/opencode/skills",
-      createIfMissing: true,
-    },
-    {
-      id: "agents-user",
-      item: "skills",
-      support: "compatibility",
-      scope: "user",
       defaultPath: "~/.agents/skills",
       createIfMissing: true,
     },
@@ -56,7 +49,9 @@ const config = {
       createIfMissing: true,
     },
   ],
-  sources: ["https://opencode.ai/docs/skills/"],
+  sources: [
+    "https://goose-docs.ai/docs/guides/context-engineering/using-skills/",
+  ],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

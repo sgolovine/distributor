@@ -26,17 +26,17 @@ describe("validateProjectConfig", () => {
       "codex",
       "opencode",
     ]);
-    expect(config.harnesses.every((harness) => harness.targets === undefined)).toBe(
-      true,
-    );
+    expect(
+      config.harnesses.every((harness) => harness.targets === undefined),
+    ).toBe(true);
   });
 
-  it("aggregates duplicate, unavailable, and unknown harness problems", () => {
+  it("aggregates duplicate and unknown harness problems", () => {
     expect.assertions(5);
 
     try {
       validateProjectConfig(
-        { harnesses: ["codex", "codex", "cursor", "invented"] },
+        { harnesses: ["codex", "codex", "invented"] },
         discovered,
         options,
       );
@@ -44,9 +44,9 @@ describe("validateProjectConfig", () => {
       expect(error).toBeInstanceOf(DistributorError);
       const failure = error as DistributorError;
       expect(failure.exitCode).toBe(2);
-      expect(failure.issues).toHaveLength(3);
+      expect(failure.issues).toHaveLength(2);
       expect(failure.issues.map((issue) => issue.message).join("\n")).toContain(
-        "planned",
+        "duplicates harness",
       );
       expect(failure.issues.map((issue) => issue.message).join("\n")).toContain(
         "unknown harness",
@@ -83,9 +83,7 @@ describe("validateProjectConfig", () => {
     expect(() =>
       validateProjectConfig(
         {
-          harnesses: [
-            { name: "codex", targets: [{ placement: "admin" }] },
-          ],
+          harnesses: [{ name: "codex", targets: [{ placement: "admin" }] }],
         },
         discovered,
         options,
@@ -114,7 +112,9 @@ describe("validateProjectConfig", () => {
     } catch (error) {
       expect((error as DistributorError).issues).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ message: expect.stringContaining("duplicates") }),
+          expect.objectContaining({
+            message: expect.stringContaining("duplicates"),
+          }),
         ]),
       );
     }
@@ -130,7 +130,10 @@ describe("validateProjectConfig", () => {
       expect.fail("Expected invalid expansion to fail");
     } catch (error) {
       expect((error as DistributorError).issues).toEqual([
-        expect.objectContaining({ path: "source", received: "$UNSUPPORTED/skills" }),
+        expect.objectContaining({
+          path: "source",
+          received: "$UNSUPPORTED/skills",
+        }),
       ]);
     }
   });

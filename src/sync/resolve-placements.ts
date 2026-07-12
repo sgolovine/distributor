@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
 import {
+  adapterCatalog,
   getAdapterCatalogEntry,
   getAvailableAdapterConfig,
   type HarnessPlacement,
@@ -47,6 +48,11 @@ export interface PlacementResolution {
   readonly satisfiedPlacements: readonly SatisfiedPlacement[];
   readonly warnings: readonly PlanNotice[];
 }
+
+const availableHarnessIds = adapterCatalog
+  .filter((entry) => entry.adapterStatus === "available")
+  .map((entry) => entry.name)
+  .join(", ");
 
 export interface ResolvePlacementsOptions {
   readonly harness?: string;
@@ -211,7 +217,7 @@ function selectHarnesses(
     throw harnessSelectionError(
       `Unknown harness ${JSON.stringify(requested)}.`,
       requested,
-      "Use codex, claude-code, or opencode.",
+      `Use one of: ${availableHarnessIds}.`,
     );
   }
   if (catalogEntry.adapterStatus !== "available") {

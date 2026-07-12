@@ -1,24 +1,34 @@
-import {
-  lstat,
-  mkdir,
-  readFile,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
 import { DistributorError } from "../../src/errors.js";
-import {
-  runInit,
-  type InitPrompt,
-} from "../../src/init/run-init.js";
+import { runInit, type InitPrompt } from "../../src/init/run-init.js";
 import { useFixture } from "../helpers/fixture.js";
+
+const ALL_HARNESSES = [
+  "codex",
+  "claude-code",
+  "opencode",
+  "cursor",
+  "gemini-cli",
+  "antigravity",
+  "github-copilot",
+  "openhands",
+  "pi",
+  "cline",
+  "goose",
+  "crush",
+  "qwen-code",
+  "kilo-code",
+  "roo-code",
+  "trae-agent",
+] as const;
 
 const DEFAULT_CONFIG_CONTENTS = `{
   "source": ".agents/skills",
-  "harnesses": ["codex", "claude-code", "opencode"]
+  "harnesses": [${ALL_HARNESSES.map((name) => JSON.stringify(name)).join(", ")}]
 }
 `;
 
@@ -159,7 +169,7 @@ describe("runInit root and config selection", () => {
       const configPath = join(root, "distributor.config.json");
       await writeFile(
         configPath,
-        '{"source":"skills","harnesses":["cursor"]}\n',
+        '{"source":"skills","harnesses":["invented"]}\n',
         "utf8",
       );
 
@@ -213,12 +223,28 @@ describe("runInit selection collection", () => {
       const prompt = vi.fn<InitPrompt>(async (context) => {
         expect(context).toEqual({
           defaultSource: ".agents/skills",
-          defaultHarnesses: ["codex", "claude-code", "opencode"],
-          harnesses: [
-            { name: "codex", displayName: "Codex CLI" },
-            { name: "claude-code", displayName: "Claude Code" },
-            { name: "opencode", displayName: "OpenCode" },
-          ],
+          defaultHarnesses: ALL_HARNESSES,
+          harnesses: ALL_HARNESSES.map((name) => ({
+            name,
+            displayName: {
+              codex: "Codex CLI",
+              "claude-code": "Claude Code",
+              opencode: "OpenCode",
+              cursor: "Cursor",
+              "gemini-cli": "Gemini CLI",
+              antigravity: "Antigravity",
+              "github-copilot": "GitHub Copilot",
+              openhands: "OpenHands",
+              pi: "Pi",
+              cline: "Cline",
+              goose: "Goose",
+              crush: "Crush",
+              "qwen-code": "Qwen Code",
+              "kilo-code": "Kilo Code",
+              "roo-code": "Roo Code",
+              "trae-agent": "Trae Agent",
+            }[name],
+          })),
         });
         return {
           source: "team-skills",

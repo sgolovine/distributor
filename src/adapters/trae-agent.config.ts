@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "codex",
-  displayName: "Codex CLI",
+  name: "trae-agent",
+  displayName: "Trae Agent",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -12,7 +12,7 @@ const config = {
       item: "skills",
       support: "native",
       scope: "project",
-      defaultPath: ".agents/skills",
+      defaultPath: ".trae/skills",
       createIfMissing: true,
     },
     {
@@ -20,19 +20,11 @@ const config = {
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.agents/skills",
+      defaultPath: "~/.trae/skills",
       createIfMissing: true,
     },
-    {
-      id: "admin",
-      item: "skills",
-      support: "native",
-      scope: "admin",
-      defaultPath: "/etc/codex/skills",
-      createIfMissing: false,
-    },
   ],
-  sources: ["https://developers.openai.com/codex/skills"],
+  sources: ["https://docs.trae.ai/ide/skills"],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

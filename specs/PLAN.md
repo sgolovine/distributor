@@ -62,9 +62,7 @@ unresolved. Use these implementation-level assumptions:
 
 Do not implement copying, directory symlinks or junctions, cleanup/`--clean`, a
 force flag, transforms, generated artifacts, machine-readable output, harness
-auto-detection, process execution for sync or Git discovery, or any roadmap
-adapter. Planned and blocked IDs must be recognized only so configuration can
-return an unsupported-adapter error.
+auto-detection or process execution for sync or Git discovery.
 
 Do not execute or import source skill content. JavaScript and TypeScript project
 configuration is the only trusted executable input and must be identified as
@@ -205,30 +203,21 @@ variables, and serialization round trips.
 Dependencies: Phase 2.
 
 - [ ] **3.1 Create and validate the stable adapter catalog.**
-  - Record every stable ID from `CONFIG_SPEC.md` with `available`, `planned`, or
-    `blocked` status so unknown and unavailable IDs produce distinct errors.
-  - Load planning behavior only for `codex`, `claude-code`, and `opencode`.
-    Roadmap entries must not expose selectable adapters.
+  - Record every stable ID from `CONFIG_SPEC.md` as available.
+  - Load planning behavior for every specified harness.
   - Validate filename/name agreement, unique placement IDs, source URLs,
     `verifiedAt`, and the invariant that an available default references a
     native/compatibility project placement.
 
 - [ ] **3.2 Add one default-exported config module per available adapter.**
-  - `codex.config.ts`: project `.agents/skills`, user `~/.agents/skills`, admin
-    `/etc/codex/skills`; default is `project`, and admin is discoverable metadata
-    but not selectable.
-  - `claude-code.config.ts`: project `.claude/skills` and user
-    `~/.claude/skills`; default is `project`.
-  - `opencode.config.ts`: project `.opencode/skills`, compatible project
-    `.agents/skills` and `.claude/skills`, user `~/.config/opencode/skills`, and
-    compatible user `.agents/skills` and `.claude/skills`; default is `project`.
+  - Add one config module for each harness in the placement matrix.
   - Copy the exact IDs, scopes, support levels, `createIfMissing` values, primary
     source URLs, and verification dates from `CONFIG_SPEC.md`. Planning code may
     not hard-code these target directories.
 
 **Tests:** snapshot/assert every declared field and invariant; prove the default
-`.agents/skills` source satisfies Codex and OpenCode but not Claude Code; prove
-planned/blocked/unverified or non-project/user placements cannot be selected.
+`.agents/skills` source satisfies every adapter that declares it; prove
+unverified or non-project/user placements cannot be selected.
 
 ### Phase 4 - Discover, load, and validate project configuration
 
@@ -322,7 +311,7 @@ Dependencies: Phases 2-4 and the output layer from Phase 1/2.
     remaining setup; do not prompt for replacement source/harness selections.
   - Only when no supported config exists, interactive mode prompts through Clack
     for source path and enabled available harnesses, displaying
-    `.agents/skills` and all three available adapters as defaults.
+    `.agents/skills` and all available adapters as defaults.
   - Only when creating a config, `-y`/`--yes` accepts exactly those displayed
     defaults without prompting. If config creation needs input while stdin is
     non-interactive and `--yes` is absent, fail with exit `2` and guidance to
@@ -649,7 +638,7 @@ Dependencies: all implementation phases.
   - Explain that JS/TS config is trusted executable code while skills are never
     executed. Explain that external targets break if their project-local source
     moves and that conflicts are never overwritten.
-  - Keep roadmap adapters, cleanup, transforms, and force behavior clearly out
+  - Keep cleanup, transforms, and force behavior clearly out
     of initial-release examples.
 
 - [ ] **14.2 Add a cross-platform CI matrix.**
@@ -673,18 +662,18 @@ Dependencies: all implementation phases.
 Create named tests that map directly to the ten release criteria so a future
 agent can prove completion without inferring coverage from unit tests.
 
-| Criterion | Required end-to-end proof |
-| --- | --- |
-| 1 | `init --yes` creates the exact default config, source directory, and local-state ignore file without overwriting pre-existing content. |
-| 2 | Syncing that empty initialized source reports a successful no-op and writes no target or state artifacts. |
-| 3 | A valid multi-file skill produces file-level Claude Code symlinks with preserved nested relative structure and correct raw link values. |
-| 4 | The same default source satisfies Codex and OpenCode without creating their fallback directories. |
-| 5 | A second identical sync performs no target writes, reports skips, and retains deterministic state/output. |
-| 6 | Each unmanaged file, directory, changed managed symlink, and escaping parent case prevents every planned target/state write. |
-| 7 | Dry run produces the same applicable plan/counts as sync while a recursive before/after snapshot proves no metadata or content changed. |
-| 8 | Removing a source file reports its previously managed target as stale without deleting the target or ownership record. |
-| 9 | Invalid config, invalid skills, unavailable adapters, and Windows symlink limitations emit actionable context and the specified exit code. |
-| 10 | Compile/snapshot tests prove config examples, adapter metadata, generated defaults, and schema-inferred public types agree across the specs. |
+| Criterion | Required end-to-end proof                                                                                                                    |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1         | `init --yes` creates the exact default config, source directory, and local-state ignore file without overwriting pre-existing content.       |
+| 2         | Syncing that empty initialized source reports a successful no-op and writes no target or state artifacts.                                    |
+| 3         | A valid multi-file skill produces file-level Claude Code symlinks with preserved nested relative structure and correct raw link values.      |
+| 4         | The same default source satisfies Codex and OpenCode without creating their fallback directories.                                            |
+| 5         | A second identical sync performs no target writes, reports skips, and retains deterministic state/output.                                    |
+| 6         | Each unmanaged file, directory, changed managed symlink, and escaping parent case prevents every planned target/state write.                 |
+| 7         | Dry run produces the same applicable plan/counts as sync while a recursive before/after snapshot proves no metadata or content changed.      |
+| 8         | Removing a source file reports its previously managed target as stale without deleting the target or ownership record.                       |
+| 9         | Invalid config, invalid skills, unavailable adapters, and Windows symlink limitations emit actionable context and the specified exit code.   |
+| 10        | Compile/snapshot tests prove config examples, adapter metadata, generated defaults, and schema-inferred public types agree across the specs. |
 
 Also retain focused coverage for every bullet in `SPEC.md`'s Testing Strategy;
 the acceptance suite complements rather than replaces unit and integration
@@ -693,20 +682,20 @@ coverage.
 ## Final completion checklist
 
 - [ ] `pnpm typecheck`, `pnpm build`, and all Vitest suites pass from a clean
-  checkout on the supported Node/pnpm baseline.
+      checkout on the supported Node/pnpm baseline.
 - [ ] The packed npm artifact exposes a working `distributor` binary and public
-  `DistributorConfig` declaration.
+      `DistributorConfig` declaration.
 - [ ] Help and version work without project config; every invocation maps to
-  exit `0`, `1`, or `2` according to the spec.
+      exit `0`, `1`, or `2` according to the spec.
 - [ ] The planner is deterministic and mutation-free; dry run reaches it but
-  cannot reach write-capable code.
+      cannot reach write-capable code.
 - [ ] All target conflicts are discovered before apply and no unmanaged content
-  can be overwritten.
+      can be overwritten.
 - [ ] Partial apply failures preserve successful ownership atomically and remain
-  safe to rerun.
+      safe to rerun.
 - [ ] State, stale reporting, selected-harness scope, and shared attribution are
-  covered by integration tests.
+      covered by integration tests.
 - [ ] Real Windows and Unix CI validate file symlink behavior, with no copy or
-  junction fallback.
+      junction fallback.
 - [ ] All ten acceptance tests pass, README examples are exercised, and no
-  unresolved spec-to-plan questions remain.
+      unresolved spec-to-plan questions remain.

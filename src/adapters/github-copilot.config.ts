@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "opencode",
-  displayName: "OpenCode",
+  name: "github-copilot",
+  displayName: "GitHub Copilot",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -12,7 +12,7 @@ const config = {
       item: "skills",
       support: "native",
       scope: "project",
-      defaultPath: ".opencode/skills",
+      defaultPath: ".github/skills",
       createIfMissing: true,
     },
     {
@@ -36,7 +36,7 @@ const config = {
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.config/opencode/skills",
+      defaultPath: "~/.copilot/skills",
       createIfMissing: true,
     },
     {
@@ -47,16 +47,10 @@ const config = {
       defaultPath: "~/.agents/skills",
       createIfMissing: true,
     },
-    {
-      id: "claude-user",
-      item: "skills",
-      support: "compatibility",
-      scope: "user",
-      defaultPath: "~/.claude/skills",
-      createIfMissing: true,
-    },
   ],
-  sources: ["https://opencode.ai/docs/skills/"],
+  sources: [
+    "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills",
+  ],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

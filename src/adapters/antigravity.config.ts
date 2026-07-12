@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "codex",
-  displayName: "Codex CLI",
+  name: "antigravity",
+  displayName: "Antigravity",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -16,23 +16,24 @@ const config = {
       createIfMissing: true,
     },
     {
+      id: "legacy-project",
+      item: "skills",
+      support: "compatibility",
+      scope: "project",
+      defaultPath: ".agent/skills",
+      createIfMissing: true,
+      notes: "Backward-compatible Antigravity workspace location.",
+    },
+    {
       id: "user",
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.agents/skills",
+      defaultPath: "~/.gemini/config/skills",
       createIfMissing: true,
     },
-    {
-      id: "admin",
-      item: "skills",
-      support: "native",
-      scope: "admin",
-      defaultPath: "/etc/codex/skills",
-      createIfMissing: false,
-    },
   ],
-  sources: ["https://developers.openai.com/codex/skills"],
+  sources: ["https://antigravity.google/docs/skills"],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

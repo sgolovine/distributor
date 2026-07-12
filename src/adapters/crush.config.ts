@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "opencode",
-  displayName: "OpenCode",
+  name: "crush",
+  displayName: "Crush",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -12,7 +12,7 @@ const config = {
       item: "skills",
       support: "native",
       scope: "project",
-      defaultPath: ".opencode/skills",
+      defaultPath: ".crush/skills",
       createIfMissing: true,
     },
     {
@@ -32,11 +32,20 @@ const config = {
       createIfMissing: true,
     },
     {
+      id: "cursor-project",
+      item: "skills",
+      support: "compatibility",
+      scope: "project",
+      defaultPath: ".cursor/skills",
+      createIfMissing: true,
+    },
+    {
       id: "user",
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.config/opencode/skills",
+      defaultPath: "~/.config/crush/skills",
+      environmentVariables: ["CRUSH_SKILLS_DIR"],
       createIfMissing: true,
     },
     {
@@ -56,7 +65,7 @@ const config = {
       createIfMissing: true,
     },
   ],
-  sources: ["https://opencode.ai/docs/skills/"],
+  sources: ["https://github.com/charmbracelet/crush#agent-skills"],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

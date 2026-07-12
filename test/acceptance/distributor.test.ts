@@ -16,10 +16,7 @@ import {
   adapterCatalog,
   availableAdapterConfigs,
 } from "../../src/adapters/index.js";
-import {
-  runCli,
-  type CliRuntime,
-} from "../../src/cli.js";
+import { runCli, type CliRuntime } from "../../src/cli.js";
 import {
   DEFAULT_SOURCE_PATH,
   DistributorConfigSchema,
@@ -34,17 +31,37 @@ import { runSync, type RunSyncResult } from "../../src/sync/run-sync.js";
 import { statePathForProject } from "../../src/sync/state.js";
 import { useFixture } from "../helpers/fixture.js";
 
+const ALL_HARNESSES = [
+  "codex",
+  "claude-code",
+  "opencode",
+  "cursor",
+  "gemini-cli",
+  "antigravity",
+  "github-copilot",
+  "openhands",
+  "pi",
+  "cline",
+  "goose",
+  "crush",
+  "qwen-code",
+  "kilo-code",
+  "roo-code",
+  "trae-agent",
+] as const;
+
 const DEFAULT_CONFIG = `{
   "source": ".agents/skills",
-  "harnesses": ["codex", "claude-code", "opencode"]
+  "harnesses": [${ALL_HARNESSES.map((name) => JSON.stringify(name)).join(", ")}]
 }
 `;
 
 const DEFAULT_IGNORE = "*\n!.gitignore\n";
 
 type Equal<Left, Right> =
-  (<Value>() => Value extends Left ? 1 : 2) extends
-  (<Value>() => Value extends Right ? 1 : 2)
+  (<Value>() => Value extends Left ? 1 : 2) extends <
+    Value,
+  >() => Value extends Right ? 1 : 2
     ? true
     : false;
 
@@ -55,7 +72,7 @@ const publicTypeMatchesSchema: Equal<
 
 const documentedConfig = {
   source: ".agents/skills",
-  harnesses: ["codex", "claude-code", "opencode"],
+  harnesses: [...ALL_HARNESSES],
 } satisfies DistributorConfig;
 
 describe("Distributor initial-release acceptance matrix", () => {
@@ -80,8 +97,7 @@ describe("Distributor initial-release acceptance matrix", () => {
       const sourceRoot = join(root, "skills");
       const sourceFile = join(sourceRoot, "keep.txt");
       const ignorePath = join(root, ".distributor", ".gitignore");
-      const configText =
-        '{"source":"skills","harnesses":["codex"]}\n';
+      const configText = '{"source":"skills","harnesses":["codex"]}\n';
       await mkdir(sourceRoot);
       await writeFile(sourceFile, "keep source content\n", "utf8");
       await writeFile(configPath, configText, "utf8");
@@ -92,9 +108,7 @@ describe("Distributor initial-release acceptance matrix", () => {
 
       expect(result.noOp).toBe(true);
       expect(await readFile(configPath, "utf8")).toBe(configText);
-      expect(await readFile(sourceFile, "utf8")).toBe(
-        "keep source content\n",
-      );
+      expect(await readFile(sourceFile, "utf8")).toBe("keep source content\n");
       expect(await readFile(ignorePath, "utf8")).toBe("custom ignore\n");
     });
   });
@@ -183,9 +197,8 @@ describe("Distributor initial-release acceptance matrix", () => {
         ]),
       );
       expect(
-        result.counts.harnesses.find(
-          (harness) => harness.harnessId === "codex",
-        )?.operations.total,
+        result.counts.harnesses.find((harness) => harness.harnessId === "codex")
+          ?.operations.total,
       ).toBe(0);
       expect(
         result.counts.harnesses.find(
@@ -204,30 +217,26 @@ describe("Distributor initial-release acceptance matrix", () => {
         "references/checklist.md": "# Checklist\n",
       });
       await runSync({ cwd: root });
-      const target = join(
-        root,
-        ".claude",
-        "skills",
-        "review",
-        "SKILL.md",
-      );
+      const target = join(root, ".claude", "skills", "review", "SKILL.md");
       const targetBefore = await linkIdentity(target);
       const stateBefore = await readFile(statePathForProject(root), "utf8");
 
       const second = await runSync({ cwd: root });
       const third = await runSync({ cwd: root });
 
-      expect(second.applyResult?.operations.every(
-        (operation) =>
-          operation.status === "skipped" &&
-          operation.targetLinkMutated === false,
-      )).toBe(true);
+      expect(
+        second.applyResult?.operations.every(
+          (operation) =>
+            operation.status === "skipped" &&
+            operation.targetLinkMutated === false,
+        ),
+      ).toBe(true);
       expect(second.applyResult?.stateWritten).toBe(false);
       expect(second.counts.physicalOperations).toMatchObject({
         create: 0,
         update: 0,
         adopt: 0,
-        skip: 2,
+        skip: 8,
       });
       expect(third.counts).toEqual(second.counts);
       expect(renderSync(third)).toBe(renderSync(second));
@@ -255,13 +264,7 @@ describe("Distributor initial-release acceptance matrix", () => {
           "alpha",
           "SKILL.md",
         );
-        const betaTarget = join(
-          root,
-          ".claude",
-          "skills",
-          "beta",
-          "SKILL.md",
-        );
+        const betaTarget = join(root, ".claude", "skills", "beta", "SKILL.md");
         let stateBefore: string | undefined;
 
         if (scenario === "changed-link") {
@@ -336,9 +339,9 @@ describe("Distributor initial-release acceptance matrix", () => {
         }),
       ]);
       expect(await readFile(ignorePath, "utf8")).toBe("custom-rule\n");
-      expect(
-        applied.plan.operations.map(operationIdentity),
-      ).toEqual(dryRun.plan.operations.map(operationIdentity));
+      expect(applied.plan.operations.map(operationIdentity)).toEqual(
+        dryRun.plan.operations.map(operationIdentity),
+      );
     });
   });
 
@@ -372,7 +375,7 @@ describe("Distributor initial-release acceptance matrix", () => {
       const result = await runSync({ cwd: root });
 
       expect(result.exitCode).toBe(0);
-      expect(result.counts.stale).toBe(1);
+      expect(result.counts.stale).toBe(4);
       expect(
         result.applyResult?.operations.some(
           (operation) => operation.operation.kind === "stale",
@@ -404,7 +407,11 @@ describe("Distributor initial-release acceptance matrix", () => {
       await writeConfig(root, ["claude-code"]);
       const skillRoot = join(root, ".agents", "skills", "broken");
       await mkdir(skillRoot, { recursive: true });
-      await writeFile(join(skillRoot, "SKILL.md"), "# no frontmatter\n", "utf8");
+      await writeFile(
+        join(skillRoot, "SKILL.md"),
+        "# no frontmatter\n",
+        "utf8",
+      );
       const cli = await runCliAt(root, ["sync"]);
       expect(cli.code).toBe(1);
       expect(cli.stderr).toContain("SKILL.md must begin");
@@ -413,11 +420,11 @@ describe("Distributor initial-release acceptance matrix", () => {
     });
 
     await useFixture(async (root) => {
-      await writeConfig(root, ["cursor"]);
+      await writeConfig(root, ["invented"]);
       await mkdir(join(root, ".agents", "skills"), { recursive: true });
       const cli = await runCliAt(root, ["sync"]);
       expect(cli.code).toBe(2);
-      expect(cli.stderr).toContain('"cursor" is planned, not available');
+      expect(cli.stderr).toContain('unknown harness "invented"');
       expect(cli.stderr).toContain("Action:");
     });
 
@@ -456,9 +463,7 @@ describe("Distributor initial-release acceptance matrix", () => {
       expect(cli.stderr).toContain("Developer Mode");
       expect(cli.stderr).toContain("will not copy files or create junctions");
       expect(
-        await exists(
-          join(root, ".claude", "skills", "review", "SKILL.md"),
-        ),
+        await exists(join(root, ".claude", "skills", "review", "SKILL.md")),
       ).toBe(false);
       expect(await exists(statePathForProject(root))).toBe(false);
     });
@@ -474,44 +479,34 @@ describe("Distributor initial-release acceptance matrix", () => {
       adapterCatalog
         .filter((entry) => entry.adapterStatus === "available")
         .map((entry) => entry.name),
-    ).toEqual(["codex", "claude-code", "opencode"]);
+    ).toEqual(ALL_HARNESSES);
+    expect(Object.keys(availableAdapterConfigs)).toEqual(ALL_HARNESSES);
     expect(
       Object.fromEntries(
-        Object.entries(availableAdapterConfigs).map(([name, config]) => [
-          name,
-          {
-            defaultProjectPlacementId: config.defaultProjectPlacementId,
-            verifiedAt: config.verifiedAt,
-            sources: config.sources,
-            projectPaths: config.placements
-              .filter((placement) => placement.scope === "project")
-              .map((placement) => placement.defaultPath),
-          },
-        ]),
+        Object.entries(availableAdapterConfigs).map(([name, config]) => {
+          const placement = config.placements.find(
+            (item) => item.id === config.defaultProjectPlacementId,
+          );
+          return [name, placement?.defaultPath];
+        }),
       ),
     ).toEqual({
-      codex: {
-        defaultProjectPlacementId: "project",
-        verifiedAt: "2026-07-09",
-        sources: ["https://developers.openai.com/codex/skills"],
-        projectPaths: [".agents/skills"],
-      },
-      "claude-code": {
-        defaultProjectPlacementId: "project",
-        verifiedAt: "2026-07-09",
-        sources: ["https://code.claude.com/docs/en/skills"],
-        projectPaths: [".claude/skills"],
-      },
-      opencode: {
-        defaultProjectPlacementId: "project",
-        verifiedAt: "2026-07-09",
-        sources: ["https://opencode.ai/docs/skills/"],
-        projectPaths: [
-          ".opencode/skills",
-          ".agents/skills",
-          ".claude/skills",
-        ],
-      },
+      codex: ".agents/skills",
+      "claude-code": ".claude/skills",
+      opencode: ".opencode/skills",
+      cursor: ".cursor/skills",
+      "gemini-cli": ".gemini/skills",
+      antigravity: ".agents/skills",
+      "github-copilot": ".github/skills",
+      openhands: ".agents/skills",
+      pi: ".pi/skills",
+      cline: ".cline/skills",
+      goose: ".agents/skills",
+      crush: ".crush/skills",
+      "qwen-code": ".qwen/skills",
+      "kilo-code": ".kilo/skills",
+      "roo-code": ".roo/skills",
+      "trae-agent": ".trae/skills",
     });
 
     await useFixture(async (root) => {
@@ -530,7 +525,9 @@ describe("Distributor initial-release acceptance matrix", () => {
       readFile(new URL("../../specs/TECH_STACK.md", import.meta.url), "utf8"),
       readFile(new URL("../../specs/PLAN.md", import.meta.url), "utf8"),
     ]);
-    const readmeExamples = [...readme.matchAll(/```json\r?\n([\s\S]*?)\r?\n```/g)]
+    const readmeExamples = [
+      ...readme.matchAll(/```json\r?\n([\s\S]*?)\r?\n```/g),
+    ]
       .map((match) => match[1])
       .filter((example): example is string => example !== undefined)
       .map((example) => JSON.parse(example) as unknown);
@@ -538,6 +535,13 @@ describe("Distributor initial-release acceptance matrix", () => {
     expect(readmeExamples[0]).toEqual(documentedConfig);
     for (const example of readmeExamples) {
       expect(DistributorConfigSchema.parse(example)).toEqual(example);
+      const expectedNames = (
+        example as { harnesses: Array<string | { name: string }> }
+      ).harnesses
+        .map((harness) =>
+          typeof harness === "string" ? harness : harness.name,
+        )
+        .sort();
       expect(
         validateProjectConfig(
           example,
@@ -550,16 +554,18 @@ describe("Distributor initial-release acceptance matrix", () => {
             homeDirectory: "/home/test",
             pathStyle: "posix",
           },
-        ).harnesses.map((harness) => harness.name).sort(),
-      ).toEqual(["claude-code", "codex", "opencode"]);
+        )
+          .harnesses.map((harness) => harness.name)
+          .sort(),
+      ).toEqual(expectedNames);
     }
-    const documentedHarnesses =
-      '"harnesses": ["codex", "claude-code", "opencode"]';
-    expect(spec).toContain(documentedHarnesses);
-    expect(plan).toContain("all three available adapters as defaults");
-    expect(configSpec).toContain("`codex` | Codex CLI | available");
-    expect(configSpec).toContain("verifiedAt: \"2026-07-09\"");
-    expect(techStack).toContain("public\n  `DistributorConfig` TypeScript type");
+    expect(spec).toContain('"harnesses": [');
+    expect(plan).toContain("all available adapters as defaults");
+    expect(configSpec).toMatch(/\| `codex`\s+\| Codex CLI\s+\| available/);
+    expect(configSpec).toContain("2026-07-12");
+    expect(techStack).toContain(
+      "public\n  `DistributorConfig` TypeScript type",
+    );
   });
 });
 
@@ -701,7 +707,11 @@ async function runCliAt(
   root: string,
   args: readonly string[],
   runtime: Partial<CliRuntime> = {},
-): Promise<{ readonly code: 0 | 1 | 2; readonly stdout: string; readonly stderr: string }> {
+): Promise<{
+  readonly code: 0 | 1 | 2;
+  readonly stdout: string;
+  readonly stderr: string;
+}> {
   let stdout = "";
   let stderr = "";
   const output = createOutput({

@@ -61,15 +61,13 @@ The initial release includes:
 - `help`, `version`, `init`, and `sync` commands.
 - `--help`, `--version`, `--harness`, and `--dry-run` flags.
 - Agent Skills as the canonical source format.
-- Codex CLI, Claude Code, and OpenCode adapters.
+- All harness adapters listed in `CONFIG_SPEC.md`.
 - Project-scoped targets by default.
 - User-scoped targets only when explicitly selected in project configuration.
 - Direct, file-level symbolic links without content transformation.
 - Project-local managed-file state and stale-target reporting.
 
-Other harnesses in `CONFIG_SPEC.md` are roadmap candidates, not available
-adapters. A planned or blocked adapter must produce an unsupported-adapter error
-if named in project configuration.
+Every stable harness ID in `CONFIG_SPEC.md` is available.
 
 ## Terminology
 
@@ -123,11 +121,11 @@ Global behavior:
 
 Exit codes:
 
-| Code | Meaning |
-| --- | --- |
-| `0` | The command completed successfully, including successful no-op and warning-only runs. |
-| `1` | Valid input was accepted, but an operational, conflict, or filesystem error prevented one or more requested operations from succeeding. |
-| `2` | The invocation or project configuration is invalid. |
+| Code | Meaning                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | The command completed successfully, including successful no-op and warning-only runs.                                                   |
+| `1`  | Valid input was accepted, but an operational, conflict, or filesystem error prevented one or more requested operations from succeeding. |
+| `2`  | The invocation or project configuration is invalid.                                                                                     |
 
 Exit `2` applies to CLI syntax, config discovery conflicts, config schema
 errors, unknown or unavailable adapters named by config, and a `--harness`
@@ -158,8 +156,8 @@ distributor init --yes
 - The init root is the enclosing Git worktree root when one exists, otherwise
   the current working directory.
 - Interactive init must prompt for the source path and enabled initial-release
-  harnesses. Its displayed defaults are `.agents/skills` and all three
-  initial-release adapters.
+  harnesses. Its displayed defaults are `.agents/skills` and all available
+  adapters.
 - `-y` and `--yes` accept those displayed defaults without prompting.
 - A non-interactive invocation without `--yes` must fail with guidance to use
   `--yes`.
@@ -178,7 +176,24 @@ The default generated configuration is:
 ```json
 {
   "source": ".agents/skills",
-  "harnesses": ["codex", "claude-code", "opencode"]
+  "harnesses": [
+    "codex",
+    "claude-code",
+    "opencode",
+    "cursor",
+    "gemini-cli",
+    "antigravity",
+    "github-copilot",
+    "openhands",
+    "pi",
+    "cline",
+    "goose",
+    "crush",
+    "qwen-code",
+    "kilo-code",
+    "roo-code",
+    "trae-agent"
+  ]
 }
 ```
 
@@ -304,7 +319,24 @@ import type { DistributorConfig } from "distributor";
 
 const config = {
   source: ".agents/skills",
-  harnesses: ["codex", "claude-code", "opencode"],
+  harnesses: [
+    "codex",
+    "claude-code",
+    "opencode",
+    "cursor",
+    "gemini-cli",
+    "antigravity",
+    "github-copilot",
+    "openhands",
+    "pi",
+    "cline",
+    "goose",
+    "crush",
+    "qwen-code",
+    "kilo-code",
+    "roo-code",
+    "trae-agent",
+  ],
 } satisfies DistributorConfig;
 
 export default config;
@@ -386,11 +418,11 @@ writes. The error must name the skill path and each validation problem.
 Stable harness IDs and adapter availability are defined in `CONFIG_SPEC.md`.
 Initial-release IDs are:
 
-| Harness ID | Display name | Initial behavior with the default source |
-| --- | --- | --- |
-| `codex` | Codex CLI | Satisfied in place because Codex discovers `.agents/skills`. |
-| `claude-code` | Claude Code | Links into `.claude/skills` by default. |
-| `opencode` | OpenCode | Satisfied in place because OpenCode discovers `.agents/skills`. |
+| Harness ID    | Display name | Initial behavior with the default source                        |
+| ------------- | ------------ | --------------------------------------------------------------- |
+| `codex`       | Codex CLI    | Satisfied in place because Codex discovers `.agents/skills`.    |
+| `claude-code` | Claude Code  | Links into `.claude/skills` by default.                         |
+| `opencode`    | OpenCode     | Satisfied in place because OpenCode discovers `.agents/skills`. |
 
 Each available adapter must:
 
@@ -685,13 +717,13 @@ by automated tests:
    metadata or content.
 8. Removing a source file reports its prior managed target as stale without
    deleting it.
-9. Invalid config, invalid skills, unavailable adapters, and Windows symlink
+9. Invalid config, invalid skills, unknown adapters, and Windows symlink
    limitations produce the specified exit code and actionable error.
 10. The examples and shared types in all three spec files agree.
 
 ## Later Scope
 
-Later releases may add roadmap adapters, transformed artifacts, include/exclude
+Later releases may add transformed artifacts, include/exclude
 patterns, machine-readable output, explicit conflict-resolution workflows,
 managed cleanup, skill package/plugin distribution, and additional config
 formats.

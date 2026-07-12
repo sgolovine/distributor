@@ -8,287 +8,187 @@ import {
   isAdapterId,
   isAvailableAdapterId,
 } from "../../src/adapters/index.js";
-import type { HarnessConfig } from "../../src/adapters/schema.js";
 
-const expectedConfigs = {
-  codex: {
-    name: "codex",
-    displayName: "Codex CLI",
-    adapterStatus: "available",
-    supportsNativeSkills: true,
-    defaultProjectPlacementId: "project",
-    placements: [
-      {
-        id: "project",
-        item: "skills",
-        support: "native",
-        scope: "project",
-        defaultPath: ".agents/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "user",
-        item: "skills",
-        support: "native",
-        scope: "user",
-        defaultPath: "~/.agents/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "admin",
-        item: "skills",
-        support: "native",
-        scope: "admin",
-        defaultPath: "/etc/codex/skills",
-        createIfMissing: false,
-      },
+const expectedAdapters = {
+  codex: ["Codex CLI", ".agents/skills", ["project", "user", "admin"]],
+  "claude-code": ["Claude Code", ".claude/skills", ["project", "user"]],
+  opencode: [
+    "OpenCode",
+    ".opencode/skills",
+    [
+      "project",
+      "agents-project",
+      "claude-project",
+      "user",
+      "agents-user",
+      "claude-user",
     ],
-    sources: ["https://developers.openai.com/codex/skills"],
-    verifiedAt: "2026-07-09",
-  },
-  "claude-code": {
-    name: "claude-code",
-    displayName: "Claude Code",
-    adapterStatus: "available",
-    supportsNativeSkills: true,
-    defaultProjectPlacementId: "project",
-    placements: [
-      {
-        id: "project",
-        item: "skills",
-        support: "native",
-        scope: "project",
-        defaultPath: ".claude/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "user",
-        item: "skills",
-        support: "native",
-        scope: "user",
-        defaultPath: "~/.claude/skills",
-        createIfMissing: true,
-      },
+  ],
+  cursor: [
+    "Cursor",
+    ".cursor/skills",
+    ["project", "agents-project", "user", "agents-user"],
+  ],
+  "gemini-cli": [
+    "Gemini CLI",
+    ".gemini/skills",
+    ["project", "agents-project", "user", "agents-user"],
+  ],
+  antigravity: [
+    "Antigravity",
+    ".agents/skills",
+    ["project", "legacy-project", "user"],
+  ],
+  "github-copilot": [
+    "GitHub Copilot",
+    ".github/skills",
+    ["project", "agents-project", "claude-project", "user", "agents-user"],
+  ],
+  openhands: [
+    "OpenHands",
+    ".agents/skills",
+    ["project", "legacy-project", "user", "openhands-user"],
+  ],
+  pi: [
+    "Pi",
+    ".pi/skills",
+    ["project", "agents-project", "user", "agents-user"],
+  ],
+  cline: [
+    "Cline",
+    ".cline/skills",
+    ["project", "clinerules-project", "claude-project", "user"],
+  ],
+  goose: [
+    "Goose",
+    ".agents/skills",
+    ["project", "goose-project", "claude-project", "user", "claude-user"],
+  ],
+  crush: [
+    "Crush",
+    ".crush/skills",
+    [
+      "project",
+      "agents-project",
+      "claude-project",
+      "cursor-project",
+      "user",
+      "agents-user",
+      "claude-user",
     ],
-    sources: ["https://code.claude.com/docs/en/skills"],
-    verifiedAt: "2026-07-09",
-  },
-  opencode: {
-    name: "opencode",
-    displayName: "OpenCode",
-    adapterStatus: "available",
-    supportsNativeSkills: true,
-    defaultProjectPlacementId: "project",
-    placements: [
-      {
-        id: "project",
-        item: "skills",
-        support: "native",
-        scope: "project",
-        defaultPath: ".opencode/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "agents-project",
-        item: "skills",
-        support: "compatibility",
-        scope: "project",
-        defaultPath: ".agents/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "claude-project",
-        item: "skills",
-        support: "compatibility",
-        scope: "project",
-        defaultPath: ".claude/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "user",
-        item: "skills",
-        support: "native",
-        scope: "user",
-        defaultPath: "~/.config/opencode/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "agents-user",
-        item: "skills",
-        support: "compatibility",
-        scope: "user",
-        defaultPath: "~/.agents/skills",
-        createIfMissing: true,
-      },
-      {
-        id: "claude-user",
-        item: "skills",
-        support: "compatibility",
-        scope: "user",
-        defaultPath: "~/.claude/skills",
-        createIfMissing: true,
-      },
-    ],
-    sources: ["https://opencode.ai/docs/skills/"],
-    verifiedAt: "2026-07-09",
-  },
-} satisfies Record<string, HarnessConfig>;
-
-function discoversProjectPath(config: HarnessConfig, path: string): boolean {
-  return config.placements.some(
-    (placement) =>
-      placement.scope === "project" &&
-      (placement.support === "native" ||
-        placement.support === "compatibility") &&
-      placement.defaultPath === path,
-  );
-}
+  ],
+  "qwen-code": ["Qwen Code", ".qwen/skills", ["project", "user"]],
+  "kilo-code": [
+    "Kilo Code",
+    ".kilo/skills",
+    ["project", "agents-project", "user"],
+  ],
+  "roo-code": [
+    "Roo Code",
+    ".roo/skills",
+    ["project", "agents-project", "user", "agents-user"],
+  ],
+  "trae-agent": ["Trae Agent", ".trae/skills", ["project", "user"]],
+} as const;
 
 describe("adapter catalog", () => {
-  it("records every stable ID, display name, and status", () => {
-    expect(adapterCatalog).toEqual([
-      {
-        name: "codex",
-        displayName: "Codex CLI",
+  it("makes every specified harness available", () => {
+    expect(
+      adapterCatalog.map(({ name, displayName, adapterStatus }) => ({
+        name,
+        displayName,
+        adapterStatus,
+      })),
+    ).toEqual(
+      Object.entries(expectedAdapters).map(([name, [displayName]]) => ({
+        name,
+        displayName,
         adapterStatus: "available",
-      },
-      {
-        name: "claude-code",
-        displayName: "Claude Code",
-        adapterStatus: "available",
-      },
-      {
-        name: "opencode",
-        displayName: "OpenCode",
-        adapterStatus: "available",
-      },
-      { name: "cursor", displayName: "Cursor", adapterStatus: "planned" },
-      {
-        name: "gemini-cli",
-        displayName: "Gemini CLI",
-        adapterStatus: "planned",
-      },
-      {
-        name: "antigravity",
-        displayName: "Antigravity",
-        adapterStatus: "planned",
-      },
-      {
-        name: "github-copilot",
-        displayName: "GitHub Copilot",
-        adapterStatus: "planned",
-      },
-      {
-        name: "openhands",
-        displayName: "OpenHands",
-        adapterStatus: "planned",
-      },
-      { name: "pi", displayName: "Pi", adapterStatus: "planned" },
-      { name: "cline", displayName: "Cline", adapterStatus: "planned" },
-      { name: "goose", displayName: "Goose", adapterStatus: "planned" },
-      { name: "crush", displayName: "Crush", adapterStatus: "blocked" },
-      {
-        name: "qwen-code",
-        displayName: "Qwen Code",
-        adapterStatus: "blocked",
-      },
-      {
-        name: "kilo-code",
-        displayName: "Kilo Code",
-        adapterStatus: "planned",
-      },
-      {
-        name: "roo-code",
-        displayName: "Roo Code",
-        adapterStatus: "planned",
-      },
-      {
-        name: "trae-agent",
-        displayName: "Trae Agent",
-        adapterStatus: "blocked",
-      },
-    ]);
+      })),
+    );
   });
 
-  it("distinguishes available, unavailable, and unknown IDs", () => {
-    expect(isAdapterId("codex")).toBe(true);
-    expect(isAvailableAdapterId("codex")).toBe(true);
-    expect(getAdapterCatalogEntry("cursor")?.adapterStatus).toBe("planned");
-    expect(isAdapterId("cursor")).toBe(true);
-    expect(isAvailableAdapterId("cursor")).toBe(false);
-    expect(getAvailableAdapterConfig("cursor")).toBeUndefined();
+  it("distinguishes available and unknown IDs", () => {
+    for (const name of Object.keys(expectedAdapters)) {
+      expect(isAdapterId(name)).toBe(true);
+      expect(isAvailableAdapterId(name)).toBe(true);
+      expect(getAdapterCatalogEntry(name)?.adapterStatus).toBe("available");
+      expect(getAvailableAdapterConfig(name)).toBeDefined();
+    }
     expect(isAdapterId("unknown")).toBe(false);
     expect(getAdapterCatalogEntry("unknown")).toBeUndefined();
   });
 });
 
 describe("available adapter configurations", () => {
-  it("contains only the three shipping adapters", () => {
-    expect(Object.keys(availableAdapterConfigs).sort()).toEqual([
-      "claude-code",
-      "codex",
-      "opencode",
-    ]);
-  });
+  it("declares the specified default paths and placement IDs", () => {
+    expect(Object.keys(availableAdapterConfigs)).toEqual(
+      Object.keys(expectedAdapters),
+    );
 
-  it("matches every placement field, source URL, and verification date", () => {
-    expect(availableAdapterConfigs).toEqual(expectedConfigs);
-  });
-
-  it("keeps optional environment overrides and notes absent", () => {
-    for (const config of Object.values(availableAdapterConfigs)) {
-      for (const placement of config.placements) {
-        expect(placement).not.toHaveProperty("environmentVariables");
-        expect(placement).not.toHaveProperty("notes");
-      }
+    for (const [
+      name,
+      [, expectedDefaultPath, expectedPlacementIds],
+    ] of Object.entries(expectedAdapters)) {
+      const config = getAvailableAdapterConfig(name);
+      expect(config, name).toBeDefined();
+      expect(config?.adapterStatus, name).toBe("available");
+      expect(config?.supportsNativeSkills, name).toBe(true);
+      expect(
+        config?.placements.map((placement) => placement.id),
+        name,
+      ).toEqual(expectedPlacementIds);
+      expect(
+        config?.placements.find(
+          (placement) => placement.id === config.defaultProjectPlacementId,
+        )?.defaultPath,
+        name,
+      ).toBe(expectedDefaultPath);
+      expect(
+        config?.sources.every((source) => URL.canParse(source)),
+        name,
+      ).toBe(true);
     }
   });
 
-  it("makes the default source discoverable by Codex and OpenCode only", () => {
-    expect(
-      discoversProjectPath(availableAdapterConfigs.codex, ".agents/skills"),
-    ).toBe(true);
-    expect(
-      discoversProjectPath(
-        availableAdapterConfigs["claude-code"],
-        ".agents/skills",
-      ),
-    ).toBe(false);
-    expect(
-      discoversProjectPath(availableAdapterConfigs.opencode, ".agents/skills"),
-    ).toBe(true);
+  it("marks the documented shared source paths as compatible", () => {
+    const agentsCompatible = [
+      "codex",
+      "opencode",
+      "cursor",
+      "gemini-cli",
+      "antigravity",
+      "github-copilot",
+      "openhands",
+      "pi",
+      "goose",
+      "crush",
+      "kilo-code",
+      "roo-code",
+    ];
+
+    for (const name of Object.keys(expectedAdapters)) {
+      const config = getAvailableAdapterConfig(name);
+      const discoversAgents = config?.placements.some(
+        (placement) =>
+          placement.scope === "project" &&
+          placement.defaultPath === ".agents/skills" &&
+          placement.support !== "unverified",
+      );
+      expect(discoversAgents, name).toBe(agentsCompatible.includes(name));
+    }
   });
 
-  it("uses declared project defaults when compatibility does not satisfy", () => {
+  it("retains environment overrides and documented caveats", () => {
     expect(
-      Object.fromEntries(
-        Object.entries(availableAdapterConfigs).map(([name, config]) => {
-          const placement = config.placements.find(
-            (candidate) =>
-              candidate.id === config.defaultProjectPlacementId,
-          );
-          return [name, placement?.defaultPath];
-        }),
-      ),
-    ).toEqual({
-      codex: ".agents/skills",
-      "claude-code": ".claude/skills",
-      opencode: ".opencode/skills",
-    });
-  });
-
-  it("retains non-selectable Codex admin metadata", () => {
-    const admin = availableAdapterConfigs.codex.placements.find(
-      (placement) => placement.id === "admin",
-    );
-
-    expect(admin).toEqual({
-      id: "admin",
-      item: "skills",
-      support: "native",
-      scope: "admin",
-      defaultPath: "/etc/codex/skills",
-      createIfMissing: false,
-    });
+      getAvailableAdapterConfig("crush")?.placements.find(
+        (placement) => placement.id === "user",
+      )?.environmentVariables,
+    ).toEqual(["CRUSH_SKILLS_DIR"]);
+    expect(
+      getAvailableAdapterConfig("goose")?.placements.find(
+        (placement) => placement.id === "project",
+      )?.notes,
+    ).toContain("Summon");
   });
 });

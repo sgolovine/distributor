@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "codex",
-  displayName: "Codex CLI",
+  name: "gemini-cli",
+  displayName: "Gemini CLI",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -12,6 +12,14 @@ const config = {
       item: "skills",
       support: "native",
       scope: "project",
+      defaultPath: ".gemini/skills",
+      createIfMissing: true,
+    },
+    {
+      id: "agents-project",
+      item: "skills",
+      support: "compatibility",
+      scope: "project",
       defaultPath: ".agents/skills",
       createIfMissing: true,
     },
@@ -20,19 +28,19 @@ const config = {
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.agents/skills",
+      defaultPath: "~/.gemini/skills",
       createIfMissing: true,
     },
     {
-      id: "admin",
+      id: "agents-user",
       item: "skills",
-      support: "native",
-      scope: "admin",
-      defaultPath: "/etc/codex/skills",
-      createIfMissing: false,
+      support: "compatibility",
+      scope: "user",
+      defaultPath: "~/.agents/skills",
+      createIfMissing: true,
     },
   ],
-  sources: ["https://developers.openai.com/codex/skills"],
+  sources: ["https://geminicli.com/docs/cli/using-agent-skills/"],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

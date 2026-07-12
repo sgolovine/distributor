@@ -1,8 +1,8 @@
 import type { HarnessConfig } from "./schema.js";
 
 const config = {
-  name: "codex",
-  displayName: "Codex CLI",
+  name: "qwen-code",
+  displayName: "Qwen Code",
   adapterStatus: "available",
   supportsNativeSkills: true,
   defaultProjectPlacementId: "project",
@@ -12,7 +12,7 @@ const config = {
       item: "skills",
       support: "native",
       scope: "project",
-      defaultPath: ".agents/skills",
+      defaultPath: ".qwen/skills",
       createIfMissing: true,
     },
     {
@@ -20,19 +20,13 @@ const config = {
       item: "skills",
       support: "native",
       scope: "user",
-      defaultPath: "~/.agents/skills",
+      defaultPath: "~/.qwen/skills",
       createIfMissing: true,
     },
-    {
-      id: "admin",
-      item: "skills",
-      support: "native",
-      scope: "admin",
-      defaultPath: "/etc/codex/skills",
-      createIfMissing: false,
-    },
   ],
-  sources: ["https://developers.openai.com/codex/skills"],
+  sources: [
+    "https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/",
+  ],
   verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 

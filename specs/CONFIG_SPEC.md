@@ -4,7 +4,7 @@
 
 This document defines stable harness IDs, adapter availability, placement data,
 and source evidence. It complements `SPEC.md`; it does not expand the initial
-release merely by listing a roadmap harness.
+release merely by listing a harness.
 
 Only harnesses with native Agent Skills support or documented compatibility
 with the Agent Skills directory format belong in this matrix. Rules, prompts,
@@ -25,10 +25,7 @@ must consume this object and must not hard-code placement directories.
 ```ts
 export type AdapterStatus = "available" | "planned" | "blocked";
 
-export type HarnessPlacementSupport =
-  | "native"
-  | "compatibility"
-  | "unverified";
+export type HarnessPlacementSupport = "native" | "compatibility" | "unverified";
 
 export type HarnessPlacementScope =
   | "project"
@@ -120,30 +117,29 @@ export type HarnessConfig = {
   code. Issues may supplement but not replace primary evidence for an available
   adapter.
 
-## Stable Harness IDs And Roadmap
+## Stable Harness IDs
 
-| Harness ID | Display name | Adapter status | Placement confidence |
-| --- | --- | --- | --- |
-| `codex` | Codex CLI | available | verified |
-| `claude-code` | Claude Code | available | verified |
-| `opencode` | OpenCode | available | verified |
-| `cursor` | Cursor | planned | verified |
-| `gemini-cli` | Gemini CLI | planned | verified |
-| `antigravity` | Antigravity | planned | verified with variant caveats |
-| `github-copilot` | GitHub Copilot | planned | verified |
-| `openhands` | OpenHands | planned | verified with installer caveats |
-| `pi` | Pi | planned | verified |
-| `cline` | Cline | planned | verified |
-| `goose` | Goose | planned | verified with extension caveat |
-| `crush` | Crush | blocked | unverified |
-| `qwen-code` | Qwen Code | blocked | exact paths unverified |
-| `kilo-code` | Kilo Code | planned | verified |
-| `roo-code` | Roo Code | planned | verified |
-| `trae-agent` | Trae Agent | blocked | exact path unverified |
+| Harness ID       | Display name   | Adapter status | Placement confidence                 |
+| ---------------- | -------------- | -------------- | ------------------------------------ |
+| `codex`          | Codex CLI      | available      | verified                             |
+| `claude-code`    | Claude Code    | available      | verified                             |
+| `opencode`       | OpenCode       | available      | verified                             |
+| `cursor`         | Cursor         | available      | verified                             |
+| `gemini-cli`     | Gemini CLI     | available      | verified                             |
+| `antigravity`    | Antigravity    | available      | verified with legacy-path caveat     |
+| `github-copilot` | GitHub Copilot | available      | verified                             |
+| `openhands`      | OpenHands      | available      | verified with deprecated-path caveat |
+| `pi`             | Pi             | available      | verified                             |
+| `cline`          | Cline          | available      | verified                             |
+| `goose`          | Goose          | available      | verified with extension caveat       |
+| `crush`          | Crush          | available      | verified                             |
+| `qwen-code`      | Qwen Code      | available      | verified                             |
+| `kilo-code`      | Kilo Code      | available      | verified with compatibility caveat   |
+| `roo-code`       | Roo Code       | available      | verified                             |
+| `trae-agent`     | Trae Agent     | available      | verified                             |
 
-Only `available` rows are part of the initial public CLI. Moving a row to
-`available` requires an implemented config module, adapter tests, a current
-primary source, and an update to the acceptance coverage in `SPEC.md`.
+Every row is part of the public CLI and has an implemented config module,
+adapter coverage, and current source evidence.
 
 ## Skill Placement Matrix
 
@@ -153,24 +149,24 @@ rows are satisfied in place and require no link. This avoids duplicate catalog
 entries in harnesses that scan both their product-specific directory and
 `.agents/skills`.
 
-| Harness | Fallback project output | Other discovered locations or notes | Sources |
-| --- | --- | --- | --- |
-| OpenCode | `.opencode/skills/<name>/SKILL.md` | Also discovers `.agents/skills`, `.claude/skills`, `~/.config/opencode/skills`, `~/.agents/skills`, and `~/.claude/skills`. The default source is therefore satisfied in place. | https://opencode.ai/docs/skills/ |
-| Claude Code | `.claude/skills/<name>/SKILL.md` | User skills use `~/.claude/skills`; plugin and enterprise scopes also exist. Claude Code does not document `.agents/skills` as a project discovery path. | https://code.claude.com/docs/en/skills |
-| Codex CLI | `.agents/skills/<name>/SKILL.md` | Repository discovery scans `.agents/skills` from the working directory to the repo root. User and admin locations are `~/.agents/skills` and `/etc/codex/skills`. The default source is satisfied in place. | https://developers.openai.com/codex/skills |
-| Cursor | `.cursor/skills/<name>/SKILL.md` | Also discovers project and user `.agents/skills`, plus documented compatibility locations. The default source will be satisfied in place once the adapter ships. | https://cursor.com/docs/skills |
-| Gemini CLI | `.gemini/skills/<name>/SKILL.md` | Also discovers `.agents/skills` and `~/.agents/skills`; extension-bundled skills are another tier. | https://geminicli.com/docs/cli/skills/ |
-| Antigravity | `.agents/skills/<name>/SKILL.md` | Global paths vary across CLI and IDE variants, including paths under `~/.gemini`; implementation must pin supported product variants. | https://antigravity.google/docs/skills, https://antigravity.google/docs/cli/plugins |
-| GitHub Copilot | `.github/skills/<name>/SKILL.md` | Also documents project `.agents/skills` and `.claude/skills`; personal skills include `~/.copilot/skills` and `~/.agents/skills`. | https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills, https://code.visualstudio.com/docs/agent-customization/agent-skills |
-| OpenHands | `.agents/skills/<name>/SKILL.md` | SDK-installed skills under `~/.openhands/skills/installed` use installer metadata and are not a safe direct-link target without additional design. | https://docs.openhands.dev/overview/skills, https://docs.openhands.dev/sdk/guides/skill |
-| Pi | `.pi/skills/<name>/SKILL.md` | Also discovers ancestor `.agents/skills`, user `.agents/skills`, package skills, configured arrays, and explicit `--skill` paths. | https://pi.dev/docs/latest/skills |
-| Cline | `.cline/skills/<name>/SKILL.md` | Also discovers `.clinerules/skills` and `.claude/skills`; the global Windows location differs syntactically. | https://docs.cline.bot/customization/skills |
-| Goose | `.agents/skills/<name>/SKILL.md` | Requires the built-in Summon extension in documented versions and has backward-compatible `.goose/skills` and `.claude/skills` locations. | https://goose-docs.ai/docs/guides/context-engineering/using-skills/ |
-| Crush | Unverified; no output permitted | Public issue discussion mentions `.crush/skills`, but an available adapter requires first-party documentation or verified source behavior for the supported version. | https://github.com/charmbracelet/crush, https://github.com/charmbracelet/crush/issues/2072 |
-| Qwen Code | Unverified; no output permitted | Native skills are documented, but exact filesystem paths and precedence must be confirmed from static first-party docs or source before implementation. | https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/, https://github.com/QwenLM/qwen-code |
-| Kilo Code | `.kilo/skills/<name>/SKILL.md` | Also loads `.agents/skills`; `.claude/skills` depends on Claude Code Compatibility. Extra paths may be configured in `kilo.jsonc`. | https://kilo.ai/docs/customize/skills |
-| Roo Code | `.roo/skills/<name>/SKILL.md` | Also supports `.agents/skills`, user locations, and mode-specific `skills-{mode}` variants. | https://docs.roocode.com/features/skills |
-| Trae Agent | Unverified; no output permitted | `SKILL.md` support is documented, but a stable filesystem path was not verified. | https://docs.trae.ai/ide/skills |
+| Harness        | Fallback project output            | Other discovered locations or notes                                                                                                                                                                         | Sources                                                                                                                                                  |
+| -------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenCode       | `.opencode/skills/<name>/SKILL.md` | Also discovers `.agents/skills`, `.claude/skills`, `~/.config/opencode/skills`, `~/.agents/skills`, and `~/.claude/skills`. The default source is therefore satisfied in place.                             | https://opencode.ai/docs/skills/                                                                                                                         |
+| Claude Code    | `.claude/skills/<name>/SKILL.md`   | User skills use `~/.claude/skills`; plugin and enterprise scopes also exist. Claude Code does not document `.agents/skills` as a project discovery path.                                                    | https://code.claude.com/docs/en/skills                                                                                                                   |
+| Codex CLI      | `.agents/skills/<name>/SKILL.md`   | Repository discovery scans `.agents/skills` from the working directory to the repo root. User and admin locations are `~/.agents/skills` and `/etc/codex/skills`. The default source is satisfied in place. | https://developers.openai.com/codex/skills                                                                                                               |
+| Cursor         | `.cursor/skills/<name>/SKILL.md`   | Also discovers project and user `.agents/skills`; the default source is satisfied in place.                                                                                                                 | https://cursor.com/docs/skills                                                                                                                           |
+| Gemini CLI     | `.gemini/skills/<name>/SKILL.md`   | Also discovers `.agents/skills` and `~/.agents/skills`; extension-bundled skills are another tier.                                                                                                          | https://geminicli.com/docs/cli/using-agent-skills/                                                                                                       |
+| Antigravity    | `.agents/skills/<name>/SKILL.md`   | Also discovers legacy project `.agent/skills`; global skills use `~/.gemini/config/skills`.                                                                                                                 | https://antigravity.google/docs/skills                                                                                                                   |
+| GitHub Copilot | `.github/skills/<name>/SKILL.md`   | Also documents project `.agents/skills` and `.claude/skills`; personal skills include `~/.copilot/skills` and `~/.agents/skills`.                                                                           | https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills, https://code.visualstudio.com/docs/agent-customization/agent-skills |
+| OpenHands      | `.agents/skills/<name>/SKILL.md`   | Also discovers deprecated `.openhands/skills` and user-level `~/.agents/skills` and `~/.openhands/skills`. SDK-installed skills remain out of scope.                                                        | https://docs.openhands.dev/overview/skills                                                                                                               |
+| Pi             | `.pi/skills/<name>/SKILL.md`       | Also discovers ancestor `.agents/skills`, user `.agents/skills`, package skills, configured arrays, and explicit `--skill` paths.                                                                           | https://pi.dev/docs/latest/skills                                                                                                                        |
+| Cline          | `.cline/skills/<name>/SKILL.md`    | Also discovers `.clinerules/skills` and `.claude/skills`; the global Windows location differs syntactically.                                                                                                | https://docs.cline.bot/customization/skills                                                                                                              |
+| Goose          | `.agents/skills/<name>/SKILL.md`   | Requires the built-in Summon extension in documented versions and has backward-compatible `.goose/skills` and `.claude/skills` locations.                                                                   | https://goose-docs.ai/docs/guides/context-engineering/using-skills/                                                                                      |
+| Crush          | `.crush/skills/<name>/SKILL.md`    | Also discovers project `.agents/skills`, `.claude/skills`, and `.cursor/skills`; user paths include `$CRUSH_SKILLS_DIR` and shared locations.                                                               | https://github.com/charmbracelet/crush#agent-skills                                                                                                      |
+| Qwen Code      | `.qwen/skills/<name>/SKILL.md`     | User skills use `~/.qwen/skills`; extension-bundled skills are another tier.                                                                                                                                | https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/                                                                                        |
+| Kilo Code      | `.kilo/skills/<name>/SKILL.md`     | Also loads `.agents/skills`; `.claude/skills` depends on Claude Code Compatibility. Extra paths may be configured in `kilo.jsonc`.                                                                          | https://kilo.ai/docs/customize/skills                                                                                                                    |
+| Roo Code       | `.roo/skills/<name>/SKILL.md`      | Also supports `.agents/skills`, user locations, and mode-specific `skills-{mode}` variants.                                                                                                                 | https://docs.roocode.com/features/skills                                                                                                                 |
+| Trae Agent     | `.trae/skills/<name>/SKILL.md`     | User skills use `~/.trae/skills`.                                                                                                                                                                           | https://docs.trae.ai/ide/skills                                                                                                                          |
 
 ## Available Adapter Configurations
 
@@ -178,11 +174,11 @@ The shipping modules must contain at least the following placements.
 
 ### Codex CLI
 
-| Placement ID | Support | Scope | Path | Create? |
-| --- | --- | --- | --- | --- |
-| `project` | native | project | `.agents/skills` | yes |
-| `user` | native | user | `~/.agents/skills` | yes |
-| `admin` | native | admin | `/etc/codex/skills` | no |
+| Placement ID | Support | Scope   | Path                | Create? |
+| ------------ | ------- | ------- | ------------------- | ------- |
+| `project`    | native  | project | `.agents/skills`    | yes     |
+| `user`       | native  | user    | `~/.agents/skills`  | yes     |
+| `admin`      | native  | admin   | `/etc/codex/skills` | no      |
 
 `defaultProjectPlacementId` is `project`. Admin scope is documented for
 discovery but is not selectable in the initial release because project config
@@ -190,28 +186,50 @@ may select only project or user scope.
 
 ### Claude Code
 
-| Placement ID | Support | Scope | Path | Create? |
-| --- | --- | --- | --- | --- |
-| `project` | native | project | `.claude/skills` | yes |
-| `user` | native | user | `~/.claude/skills` | yes |
+| Placement ID | Support | Scope   | Path               | Create? |
+| ------------ | ------- | ------- | ------------------ | ------- |
+| `project`    | native  | project | `.claude/skills`   | yes     |
+| `user`       | native  | user    | `~/.claude/skills` | yes     |
 
 `defaultProjectPlacementId` is `project`. Plugin and enterprise placements are
 not general filesystem targets and are omitted from the initial adapter.
 
 ### OpenCode
 
-| Placement ID | Support | Scope | Path | Create? |
-| --- | --- | --- | --- | --- |
-| `project` | native | project | `.opencode/skills` | yes |
-| `agents-project` | compatibility | project | `.agents/skills` | yes |
-| `claude-project` | compatibility | project | `.claude/skills` | yes |
-| `user` | native | user | `~/.config/opencode/skills` | yes |
-| `agents-user` | compatibility | user | `~/.agents/skills` | yes |
-| `claude-user` | compatibility | user | `~/.claude/skills` | yes |
+| Placement ID     | Support       | Scope   | Path                        | Create? |
+| ---------------- | ------------- | ------- | --------------------------- | ------- |
+| `project`        | native        | project | `.opencode/skills`          | yes     |
+| `agents-project` | compatibility | project | `.agents/skills`            | yes     |
+| `claude-project` | compatibility | project | `.claude/skills`            | yes     |
+| `user`           | native        | user    | `~/.config/opencode/skills` | yes     |
+| `agents-user`    | compatibility | user    | `~/.agents/skills`          | yes     |
+| `claude-user`    | compatibility | user    | `~/.claude/skills`          | yes     |
 
 `defaultProjectPlacementId` is `project`. The automatic resolution rule in
 `SPEC.md` still treats the default `.agents/skills` source as satisfied because
 `agents-project` is a declared compatible project placement.
+
+### Additional available adapters
+
+The remaining modules declare these automatic project outputs and compatible
+project discovery paths. Each also declares the corresponding documented user
+placement where one exists.
+
+| Harness        | Default project path | Compatible project paths                             | User path                 |
+| -------------- | -------------------- | ---------------------------------------------------- | ------------------------- |
+| Cursor         | `.cursor/skills`     | `.agents/skills`                                     | `~/.cursor/skills`        |
+| Gemini CLI     | `.gemini/skills`     | `.agents/skills`                                     | `~/.gemini/skills`        |
+| Antigravity    | `.agents/skills`     | `.agent/skills`                                      | `~/.gemini/config/skills` |
+| GitHub Copilot | `.github/skills`     | `.agents/skills`, `.claude/skills`                   | `~/.copilot/skills`       |
+| OpenHands      | `.agents/skills`     | `.openhands/skills`                                  | `~/.agents/skills`        |
+| Pi             | `.pi/skills`         | `.agents/skills`                                     | `~/.pi/agent/skills`      |
+| Cline          | `.cline/skills`      | `.clinerules/skills`, `.claude/skills`               | `~/.cline/skills`         |
+| Goose          | `.agents/skills`     | `.goose/skills`, `.claude/skills`                    | `~/.agents/skills`        |
+| Crush          | `.crush/skills`      | `.agents/skills`, `.claude/skills`, `.cursor/skills` | `~/.config/crush/skills`  |
+| Qwen Code      | `.qwen/skills`       | —                                                    | `~/.qwen/skills`          |
+| Kilo Code      | `.kilo/skills`       | `.agents/skills`                                     | `~/.kilo/skills`          |
+| Roo Code       | `.roo/skills`        | `.agents/skills`                                     | `~/.roo/skills`           |
+| Trae Agent     | `.trae/skills`       | —                                                    | `~/.trae/skills`          |
 
 ## Example Configuration Module
 
@@ -275,7 +293,7 @@ const config = {
     },
   ],
   sources: ["https://opencode.ai/docs/skills/"],
-  verifiedAt: "2026-07-09",
+  verifiedAt: "2026-07-12",
 } satisfies HarnessConfig;
 
 export default config;
@@ -291,15 +309,11 @@ export default config;
 - Admin, system, plugin, package, and configured scopes are not selectable in
   the initial release.
 - A selected `unverified` placement is always an error.
-- A planned or blocked adapter is always an error, even when its matrix path
-  appears verified.
+- Every stable harness ID is selectable.
 - Adapter tests must assert all declared placement IDs, scopes, source URLs, and
   default-resolution behavior.
 
 ## Research Freshness
 
-The Agent Skills format and the three available adapters were rechecked against
-primary documentation on July 9, 2026. Roadmap rows retain research gathered on
-July 8, 2026 and must be rechecked before implementation and again before a
-release that enables them. A changed path updates this file and its adapter test
-fixture in the same commit.
+All adapter placements were rechecked against primary documentation on July 12, 2026. A changed path updates this file and its adapter test fixture in the same
+commit.

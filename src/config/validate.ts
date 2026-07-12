@@ -2,6 +2,7 @@ import { extname } from "node:path";
 import { homedir } from "node:os";
 
 import {
+  adapterCatalog,
   getAdapterCatalogEntry,
   getAvailableAdapterConfig,
   isAvailableAdapterId,
@@ -49,6 +50,11 @@ export interface ValidateConfigOptions {
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly pathStyle?: PathStyle;
 }
+
+const availableHarnessIds = adapterCatalog
+  .filter((entry) => entry.adapterStatus === "available")
+  .map((entry) => entry.name)
+  .join(", ");
 
 function valueAtPath(value: unknown, path: readonly PropertyKey[]): unknown {
   let current = value;
@@ -216,7 +222,7 @@ export function validateProjectConfig(
         message: `unknown harness ${JSON.stringify(name)}`,
         path: fieldPath,
         received: name,
-        expected: "codex, claude-code, or opencode",
+        expected: availableHarnessIds,
         correction: "Use an available harness ID.",
       });
       continue;
@@ -230,7 +236,7 @@ export function validateProjectConfig(
         path: fieldPath,
         received: name,
         expected: "an available harness",
-        correction: "Remove this harness or choose codex, claude-code, or opencode.",
+        correction: `Remove this harness or choose one of: ${availableHarnessIds}.`,
       });
       continue;
     }
