@@ -51,6 +51,7 @@
     "@clack/prompts": "^1.7.0",
     "commander": "^15.0.0",
     "cosmiconfig": "^9.0.2",
+    "distributor": "link:",
     "picocolors": "^1.1.1",
     "tsx": "^4.23.0",
     "yaml": "^2.9.0",
