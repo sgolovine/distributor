@@ -51,7 +51,7 @@ async function exists(path: string): Promise<boolean> {
 
 describe("runInit root and config selection", () => {
   it.each(["directory", "file"] as const)(
-    "uses an enclosing Git worktree with a .git %s",
+    "uses the invocation directory inside a Git worktree with a .git %s",
     async (markerType) => {
       await useFixture(async (root) => {
         const worktree = join(root, "worktree");
@@ -69,12 +69,15 @@ describe("runInit root and config selection", () => {
 
         const result = await runInit({ cwd: nested, yes: true });
 
-        expect(result.projectRoot).toBe(worktree);
+        expect(result.projectRoot).toBe(nested);
         expect(result.configPath).toBe(
-          join(worktree, "distributor.config.json"),
+          join(nested, "distributor.config.json"),
         );
-        expect(await exists(join(nested, "distributor.config.json"))).toBe(
+        expect(await exists(join(worktree, "distributor.config.json"))).toBe(
           false,
+        );
+        expect(await exists(join(nested, ".distributor", ".gitignore"))).toBe(
+          true,
         );
       });
     },
@@ -92,29 +95,31 @@ describe("runInit root and config selection", () => {
     });
   });
 
-  it("ignores a nested config when selecting the Git-root config", async () => {
-    await useFixture(async (root) => {
-      const nested = join(root, "nested");
-      const nestedConfig = join(nested, "distributor.config.json");
-      await mkdir(join(root, ".git"));
-      await mkdir(nested);
-      await writeFile(
-        nestedConfig,
-        '{"source":"nested-skills","harnesses":["codex"]}\n',
-        "utf8",
-      );
+  it(
+    "preserves a config in the invocation directory inside a Git worktree",
+    async () => {
+      await useFixture(async (root) => {
+        const nested = join(root, "nested");
+        const nestedConfig = join(nested, "distributor.config.json");
+        await mkdir(join(root, ".git"));
+        await mkdir(nested);
+        await writeFile(
+          nestedConfig,
+          '{"source":"nested-skills","harnesses":["codex"]}\n',
+          "utf8",
+        );
 
-      const result = await runInit({ cwd: nested, yes: true });
+        const result = await runInit({ cwd: nested, yes: true });
 
-      expect(result.configPath).toBe(join(root, "distributor.config.json"));
-      expect(await readFile(result.configPath, "utf8")).toBe(
-        DEFAULT_CONFIG_CONTENTS,
-      );
-      expect(await readFile(nestedConfig, "utf8")).toBe(
-        '{"source":"nested-skills","harnesses":["codex"]}\n',
-      );
-    });
-  });
+        expect(result.projectRoot).toBe(nested);
+        expect(result.configPath).toBe(nestedConfig);
+        expect(await readFile(nestedConfig, "utf8")).toBe(
+          '{"source":"nested-skills","harnesses":["codex"]}\n',
+        );
+        expect(await exists(join(root, "distributor.config.json"))).toBe(false);
+      });
+    },
+  );
 
   it("reports every conflicting config at the init root before writes", async () => {
     await useFixture(async (root) => {

@@ -1,17 +1,14 @@
 import { isCancel, multiselect, text } from "@clack/prompts";
 import type { Stats } from "node:fs";
 import { lstat, mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 import {
   adapterCatalog,
   isAvailableAdapterId,
   type AvailableAdapterId,
 } from "../adapters/index.js";
-import {
-  findInitRoot,
-  supportedConfigsAt,
-} from "../config/discover.js";
+import { supportedConfigsAt } from "../config/discover.js";
 import {
   loadProjectConfig,
   validateProjectConfig,
@@ -202,11 +199,9 @@ function ensureSourceDoesNotCollide(
 }
 
 async function buildInitPlan(options: RunInitOptions): Promise<InitPlan> {
-  const startDirectory = options.cwd ?? process.cwd();
-  let projectRoot: string;
+  const projectRoot = resolve(options.cwd ?? process.cwd());
   let matches: string[];
   try {
-    projectRoot = await findInitRoot(startDirectory);
     matches = await supportedConfigsAt(projectRoot);
   } catch (error) {
     if (error instanceof DistributorError) {
@@ -215,10 +210,10 @@ async function buildInitPlan(options: RunInitOptions): Promise<InitPlan> {
 
     throw new DistributorError(
       "filesystem",
-      `Could not inspect the initialization root from: ${startDirectory}`,
+      `Could not inspect the initialization root: ${projectRoot}`,
       {
-        operation: "find init root",
-        context: { startDirectory },
+        operation: "inspect init root",
+        context: { projectRoot },
         correction:
           "Fix the directory or its permissions, then rerun initialization.",
         cause: error,

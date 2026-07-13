@@ -89,11 +89,6 @@ export async function findGitWorktreeRoot(
   }
 }
 
-export async function findInitRoot(startDirectory: string): Promise<string> {
-  const start = resolve(startDirectory);
-  return (await findGitWorktreeRoot(start)) ?? start;
-}
-
 export async function discoverConfig(
   startDirectory: string,
 ): Promise<DiscoveredConfig> {

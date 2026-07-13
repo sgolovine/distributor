@@ -1,12 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import {
   discoverConfig,
   findGitWorktreeRoot,
-  findInitRoot,
 } from "../../src/config/discover.js";
 import { DistributorError } from "../../src/errors.js";
 import { useFixture } from "../helpers/fixture.js";
@@ -91,16 +90,6 @@ describe("config discovery", () => {
         exitCode: 2,
         correction: expect.stringContaining("regular"),
       });
-    });
-  });
-
-  it("uses the invocation directory as a non-Git init root", async () => {
-    await useFixture(async (root) => {
-      const nested = join(root, "nested");
-      await mkdir(nested);
-
-      await expect(findInitRoot(nested)).resolves.toBe(nested);
-      expect(dirname(nested)).toBe(root);
     });
   });
 });
