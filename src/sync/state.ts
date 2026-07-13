@@ -27,6 +27,7 @@ export interface ManagedStateEntry {
 export interface ManagedState {
   readonly version: typeof MANAGED_STATE_VERSION;
   readonly entries: readonly ManagedStateEntry[];
+  readonly directories?: readonly string[];
 }
 
 export interface LoadedManagedState extends ManagedState {
@@ -151,7 +152,9 @@ function validateParsedState(
 
   const issues: ValidationIssue[] = [];
   const entries: ManagedStateEntry[] = [];
+  const directories: string[] = [];
   const seenTargets = new Map<string, number>();
+  const seenDirectories = new Map<string, number>();
 
   for (const [entryIndex, entry] of parsed.data.entries.entries()) {
     let sourcePath: string | undefined;
@@ -241,6 +244,46 @@ function validateParsedState(
     }
   }
 
+  for (const [directoryIndex, storedDirectory] of parsed.data.directories.entries()) {
+    try {
+      const directory = deserializeStatePath(storedDirectory, projectRoot);
+      const canonicalDirectory = serializeStatePath(directory, projectRoot);
+      if (canonicalDirectory !== storedDirectory) {
+        issues.push({
+          path: `directories[${directoryIndex}]`,
+          message: "stored directory path is not in canonical normalized form",
+          received: storedDirectory,
+          expected: canonicalDirectory,
+          correction: "Review the state path instead of allowing automatic repair.",
+        });
+      }
+
+      const key = pathComparisonKey(directory);
+      const priorIndex = seenDirectories.get(key);
+      if (priorIndex !== undefined) {
+        issues.push({
+          path: `directories[${directoryIndex}]`,
+          message: `duplicates the normalized directory in directories[${priorIndex}]`,
+          received: storedDirectory,
+          expected: "unique managed directory paths",
+          correction: "Remove only the duplicate directory after reviewing the state.",
+        });
+      } else {
+        seenDirectories.set(key, directoryIndex);
+        directories.push(directory);
+      }
+    } catch (error) {
+      const failure = error as DistributorError;
+      issues.push({
+        path: `directories[${directoryIndex}]`,
+        message: failure.message,
+        received: storedDirectory,
+        expected: "a canonical project-relative or external absolute path",
+        correction: failure.correction ?? "Use a canonical stored directory path.",
+      });
+    }
+  }
+
   if (issues.length > 0) {
     throw stateFailure(
       statePath,
@@ -249,7 +292,11 @@ function validateParsedState(
     );
   }
 
-  return { version: MANAGED_STATE_VERSION, entries: entries.sort(compareStateEntries) };
+  return {
+    version: MANAGED_STATE_VERSION,
+    entries: entries.sort(compareStateEntries),
+    directories: directories.sort(compareText),
+  };
 }
 
 export async function loadManagedState(
@@ -266,6 +313,7 @@ export async function loadManagedState(
       return {
         version: MANAGED_STATE_VERSION,
         entries: [],
+        directories: [],
         path,
         exists: false,
         originalText: undefined,
@@ -302,6 +350,7 @@ export async function loadManagedState(
       return {
         version: MANAGED_STATE_VERSION,
         entries: [],
+        directories: [],
         path,
         exists: false,
         originalText: undefined,
@@ -358,8 +407,11 @@ export function serializeManagedState(
       placementId: item.placementId,
     })),
   }));
+  const directories = [...(state.directories ?? [])]
+    .sort(compareText)
+    .map((directory) => serializeStatePath(directory, projectRoot));
 
-  return `${JSON.stringify({ version: MANAGED_STATE_VERSION, entries }, null, 2)}\n`;
+  return `${JSON.stringify({ version: MANAGED_STATE_VERSION, entries, directories }, null, 2)}\n`;
 }
 
 function isEntryInScope(
@@ -645,7 +697,12 @@ export async function persistManagedState(
   projectRoot: string,
 ): Promise<StatePersistenceResult> {
   const contents = serializeManagedState(nextState, projectRoot);
-  if (loaded.originalText === contents || (!loaded.exists && nextState.entries.length === 0)) {
+  if (
+    loaded.originalText === contents ||
+    (!loaded.exists &&
+      nextState.entries.length === 0 &&
+      (nextState.directories?.length ?? 0) === 0)
+  ) {
     return { written: false, warnings: [] };
   }
 

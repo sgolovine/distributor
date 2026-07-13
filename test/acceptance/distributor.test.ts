@@ -524,8 +524,11 @@ describe("Distributor initial-release acceptance matrix", () => {
       expect(await exists(join(codexSkill, "agents", "openai.yml"))).toBe(false);
       expect(await exists(join(claudeSkill, "SKILL.md"))).toBe(false);
       expect(await exists(join(skillRoot, "agents", "openai.yml"))).toBe(true);
-      expect((await lstat(codexSkill)).isDirectory()).toBe(true);
-      expect((await loadManagedState(root)).entries).toEqual([]);
+      expect(await exists(codexSkill)).toBe(false);
+      await expect(loadManagedState(root)).resolves.toMatchObject({
+        entries: [],
+        directories: [],
+      });
     });
   });
 

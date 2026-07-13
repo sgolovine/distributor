@@ -56,6 +56,74 @@ describe("runRemove", () => {
     });
   });
 
+  it("removes created directories from the deepest path upward", async () => {
+    await useFixture(async (root) => {
+      await writeConfig(root);
+      const targetRoot = join(root, ".claude", "skills");
+      const skillDirectory = join(targetRoot, "review");
+      const target = join(skillDirectory, "SKILL.md");
+      await mkdir(skillDirectory, { recursive: true });
+      await symlink("../../../../skills/review/SKILL.md", target, "file");
+      await writeState(
+        root,
+        [entry(root, target, "../../../../skills/review/SKILL.md")],
+        [targetRoot, skillDirectory],
+      );
+
+      const result = await runRemove({ cwd: root });
+
+      expect(result).toMatchObject({
+        exitCode: 0,
+        counts: { removed: 1, missing: 0, failed: 0 },
+        directoryCounts: { removed: 2, missing: 0, failed: 0 },
+      });
+      await expect(lstat(targetRoot)).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await loadManagedState(root)).directories).toEqual([]);
+    });
+  });
+
+  it("does not remove pre-existing directories that were not recorded", async () => {
+    await useFixture(async (root) => {
+      await writeConfig(root);
+      const targetRoot = join(root, ".claude", "skills");
+      const skillDirectory = join(targetRoot, "review");
+      const target = join(skillDirectory, "SKILL.md");
+      await mkdir(skillDirectory, { recursive: true });
+      await symlink("../../../../skills/review/SKILL.md", target, "file");
+      await writeState(
+        root,
+        [entry(root, target, "../../../../skills/review/SKILL.md")],
+        [skillDirectory],
+      );
+
+      const result = await runRemove({ cwd: root });
+
+      expect(result.exitCode).toBe(0);
+      await expect(lstat(skillDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await lstat(targetRoot)).isDirectory()).toBe(true);
+    });
+  });
+
+  it("retains a recorded directory when it contains an unmanaged file", async () => {
+    await useFixture(async (root) => {
+      await writeConfig(root);
+      const directory = join(root, ".claude", "skills", "review");
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "notes.txt"), "keep", "utf8");
+      await writeState(root, [], [directory]);
+
+      const result = await runRemove({ cwd: root });
+
+      expect(result).toMatchObject({
+        exitCode: 1,
+        counts: { removed: 0, missing: 0, failed: 0 },
+        directoryCounts: { removed: 0, missing: 0, failed: 1 },
+      });
+      expect((await lstat(directory)).isDirectory()).toBe(true);
+      expect((await loadManagedState(root)).directories).toEqual([directory]);
+    });
+  });
+
   it("is a no-op when Distributor has no recorded links", async () => {
     await useFixture(async (root) => {
       await writeConfig(root);
@@ -91,8 +159,9 @@ function entry(root: string, targetPath: string, linkValue: string) {
 async function writeState(
   root: string,
   entries: ManagedState["entries"],
+  directories: readonly string[] = [],
 ): Promise<void> {
   const loaded = await loadManagedState(root);
-  await persistManagedState(loaded, { version: 1, entries }, root);
+  await persistManagedState(loaded, { version: 1, entries, directories }, root);
   expect(await readFile(loaded.path, "utf8")).toContain('"version": 1');
 }

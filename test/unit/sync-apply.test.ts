@@ -67,6 +67,10 @@ describe("applySyncPlan target mutations", () => {
       expect((await lstat(fixture.targetPath)).isSymbolicLink()).toBe(true);
       expect((await lstat(dirname(fixture.targetPath))).isDirectory()).toBe(true);
       await expect(loadManagedState(root)).resolves.toMatchObject({
+        directories: [
+          fixture.targetRoot,
+          dirname(fixture.targetPath),
+        ],
         entries: [
           expect.objectContaining({
             targetPath: fixture.targetPath,
@@ -266,6 +270,7 @@ describe("applySyncPlan target mutations", () => {
       });
 
       expect(result.operations[0]?.status).toBe("adopted");
+      expect(result.nextState.directories).toEqual([]);
       expect(mkdirTarget).not.toHaveBeenCalled();
       expect(symlinkTarget).not.toHaveBeenCalled();
       expect(unlinkTarget).not.toHaveBeenCalled();

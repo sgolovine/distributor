@@ -20,6 +20,7 @@ export const ManagedStateSchema = z
   .object({
     version: z.literal(1),
     entries: z.array(StateEntrySchema),
+    directories: z.array(z.string().min(1)).optional().default([]),
   })
   .strict();
 

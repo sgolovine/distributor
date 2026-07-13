@@ -4,6 +4,7 @@ import {
   mkdir,
   readlink,
   realpath,
+  rmdir,
   symlink,
   unlink,
 } from "node:fs/promises";
@@ -49,6 +50,7 @@ export interface ApplyFilesystem {
   readonly readlink: (path: string) => Promise<string>;
   readonly realpath: (path: string) => Promise<string>;
   readonly mkdir: (path: string) => Promise<void>;
+  readonly rmdir: (path: string) => Promise<void>;
   readonly symlink: (
     target: string,
     path: string,
@@ -141,6 +143,7 @@ const defaultFilesystem: ApplyFilesystem = {
   mkdir: async (path) => {
     await mkdir(path);
   },
+  rmdir,
   symlink: async (target, path, type) => {
     await symlink(target, path, type);
   },
@@ -185,10 +188,18 @@ export async function applySyncPlan(
   const operationResults: ApplyOperationResult[] = [];
   const failures: ApplyFailure[] = [];
   const reservedPhysicalTargets = new Map<string, string>();
+  const managedDirectories = new Map(
+    (loadedState.directories ?? []).map((directory) => [
+      pathComparisonKey(directory),
+      directory,
+    ]),
+  );
+  const loadedDirectoryKeys = new Set(managedDirectories.keys());
 
   for (const operation of plan.operations) {
     const targetKey = pathComparisonKey(operation.targetPath);
     const priorEntry = priorByTarget.get(targetKey);
+    const priorDirectoryKeys = new Set(managedDirectories.keys());
 
     try {
       const status = await applyOperation(
@@ -199,6 +210,7 @@ export async function applySyncPlan(
         filesystem,
         platform,
         reservedPhysicalTargets,
+        managedDirectories,
       );
       operationResults.push({
         operation,
@@ -213,6 +225,11 @@ export async function applySyncPlan(
         options.harnessId,
       );
     } catch (error) {
+      await rollbackCreatedDirectories(
+        managedDirectories,
+        priorDirectoryKeys,
+        filesystem,
+      );
       const failure = operationFailure(operation, error);
       const targetLinkMutated =
         error instanceof OperationFailure
@@ -239,6 +256,7 @@ export async function applySyncPlan(
   const nextState: ManagedState = {
     version: 1,
     entries: [...nextEntries.values()].sort(compareStateEntries),
+    directories: [...managedDirectories.values()].sort(),
   };
   let statePersisted = false;
   let stateWritten = false;
@@ -267,9 +285,15 @@ export async function applySyncPlan(
       filesystem,
       platform,
     );
+    await rollbackCreatedDirectories(
+      managedDirectories,
+      loadedDirectoryKeys,
+      filesystem,
+    );
     returnedState = {
       version: 1,
       entries: [...loadedState.entries].sort(compareStateEntries),
+      directories: loadedState.directories ?? [],
     };
   }
 
@@ -281,6 +305,27 @@ export async function applySyncPlan(
     statePersisted,
     stateWritten,
   };
+}
+
+async function rollbackCreatedDirectories(
+  managedDirectories: Map<string, string>,
+  priorDirectoryKeys: ReadonlySet<string>,
+  filesystem: ApplyFilesystem,
+): Promise<void> {
+  const created = [...managedDirectories.entries()]
+    .filter(([key]) => !priorDirectoryKeys.has(key))
+    .sort((left, right) => right[1].length - left[1].length);
+
+  for (const [key, directory] of created) {
+    try {
+      await filesystem.rmdir(directory);
+      managedDirectories.delete(key);
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        managedDirectories.delete(key);
+      }
+    }
+  }
 }
 
 async function reconcileAfterPersistenceFailure(
@@ -574,6 +619,7 @@ async function applyOperation(
   filesystem: ApplyFilesystem,
   platform: NodeJS.Platform,
   reservedPhysicalTargets: Map<string, string>,
+  managedDirectories: Map<string, string>,
 ): Promise<Exclude<ApplyOperationStatus, "failed">> {
   if (operation.kind === "stale") {
     requirePriorOwnership(operation, priorEntry);
@@ -610,6 +656,7 @@ async function applyOperation(
     placements,
     mayCreateParents,
     filesystem,
+    managedDirectories,
   );
   await reservePhysicalTarget(
     operation,
@@ -1077,14 +1124,15 @@ async function prepareAndRevalidateParents(
   placements: readonly ResolvedTargetPlacement[],
   mayCreate: boolean,
   filesystem: ApplyFilesystem,
+  managedDirectories: Map<string, string> = new Map(),
 ): Promise<void> {
   const chains = await parentChains(operation, placements, filesystem);
 
   for (const chain of chains) {
-    await inspectParentChain(chain, mayCreate, filesystem);
+    await inspectParentChain(chain, mayCreate, filesystem, managedDirectories);
   }
   for (const chain of chains) {
-    await inspectParentChain(chain, false, filesystem);
+    await inspectParentChain(chain, false, filesystem, managedDirectories);
   }
 }
 
@@ -1173,12 +1221,14 @@ async function inspectParentChain(
   chain: ParentChain,
   mayCreate: boolean,
   filesystem: ApplyFilesystem,
+  managedDirectories: Map<string, string>,
 ): Promise<void> {
   for (const parentPath of pathsInChain(
     chain.inspectionRoot,
     chain.targetParent,
   )) {
     let stats: Stats;
+    let created = false;
     try {
       stats = await filesystem.lstat(parentPath);
     } catch (error) {
@@ -1200,6 +1250,7 @@ async function inspectParentChain(
 
       try {
         await filesystem.mkdir(parentPath);
+        created = true;
       } catch (mkdirError) {
         if (errorCode(mkdirError) !== "EEXIST") {
           throw new OperationFailure(
@@ -1231,6 +1282,9 @@ async function inspectParentChain(
       chain.verifyInspectionRoot &&
         pathsAreEquivalent(parentPath, chain.inspectionRoot),
     );
+    if (created) {
+      managedDirectories.set(pathComparisonKey(parentPath), parentPath);
+    }
   }
 }
 

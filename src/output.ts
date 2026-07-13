@@ -99,6 +99,15 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       writeOut(
         `Removed ${result.counts.removed} managed link${result.counts.removed === 1 ? "" : "s"}; ${result.counts.missing} already missing, ${result.counts.failed} failed.\n`,
       );
+      const directoryCounts = result.directoryCounts;
+      if (
+        directoryCounts !== undefined &&
+        directoryCounts.removed + directoryCounts.missing + directoryCounts.failed > 0
+      ) {
+        writeOut(
+          `Removed ${directoryCounts.removed} managed director${directoryCounts.removed === 1 ? "y" : "ies"}; ${directoryCounts.missing} already missing, ${directoryCounts.failed} failed.\n`,
+        );
+      }
       for (const warning of result.warnings) {
         const location =
           warning.path === undefined
