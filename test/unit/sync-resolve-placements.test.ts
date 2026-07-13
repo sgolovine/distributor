@@ -115,7 +115,7 @@ describe("resolvePlacements", () => {
     ]);
   });
 
-  it("maps agents/openai.yml only for Codex", () => {
+  it("maps OpenAI agent metadata only for Codex", () => {
     const sourceRoot = "/project/source";
     const result = resolvePlacements(
       projectConfig("/project", sourceRoot, [
@@ -157,18 +157,30 @@ describe("resolvePlacements", () => {
         ),
       ]),
       discovery(sourceRoot, [
-        skill(sourceRoot, "review", ["SKILL.md", "agents/openai.yml"]),
+        skill(sourceRoot, "review", [
+          "SKILL.md",
+          "agents/openai.yaml",
+          "agents/openai.yml",
+        ]),
       ]),
       { pathStyle: "posix" },
     );
 
     const openAiConfigMappings = result.mappings.filter(
-      (mapping) => mapping.sourcePath === "/project/source/review/agents/openai.yml",
+      (mapping) =>
+        mapping.sourcePath.endsWith("/agents/openai.yaml") ||
+        mapping.sourcePath.endsWith("/agents/openai.yml"),
     );
 
-    expect(openAiConfigMappings).toHaveLength(1);
-    expect(openAiConfigMappings[0]?.attributions).toEqual([
-      { harnessId: "codex", placementId: "project" },
+    expect(openAiConfigMappings).toEqual([
+      expect.objectContaining({
+        sourcePath: "/project/source/review/agents/openai.yaml",
+        attributions: [{ harnessId: "codex", placementId: "project" }],
+      }),
+      expect.objectContaining({
+        sourcePath: "/project/source/review/agents/openai.yml",
+        attributions: [{ harnessId: "codex", placementId: "project" }],
+      }),
     ]);
     expect(result.mappings.filter((mapping) =>
       mapping.sourcePath.endsWith("/SKILL.md"),

@@ -54,8 +54,8 @@ prompts when run interactively. In a non-interactive terminal, use `--yes`.
 Each non-hidden directory immediately under the source root is one skill. It
 must contain a regular file named exactly `SKILL.md`; nested assets, references,
 and scripts are preserved as independent file links. The optional
-`agents/openai.yml` file is emitted only to Codex targets and is omitted from
-Claude, Cline, and every other non-Codex target.
+`agents/openai.yaml` (or `agents/openai.yml`) is emitted only to Codex targets
+and omitted from Claude, Cline, and every other non-Codex target.
 
 ## Commands
 

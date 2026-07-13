@@ -498,7 +498,7 @@ describe("Distributor initial-release acceptance matrix", () => {
         "utf8",
       );
       await writeFile(
-        join(skillRoot, "agents", "openai.yml"),
+        join(skillRoot, "agents", "openai.yaml"),
         "interface:\n  display_name: Review\n",
         "utf8",
       );
@@ -510,19 +510,19 @@ describe("Distributor initial-release acceptance matrix", () => {
       expect(sync.exitCode).toBe(0);
       expect((await lstat(join(codexSkill, "SKILL.md"))).isSymbolicLink()).toBe(true);
       expect(
-        (await lstat(join(codexSkill, "agents", "openai.yml"))).isSymbolicLink(),
+        (await lstat(join(codexSkill, "agents", "openai.yaml"))).isSymbolicLink(),
       ).toBe(true);
       expect((await lstat(join(claudeSkill, "SKILL.md"))).isSymbolicLink()).toBe(true);
-      expect(await exists(join(claudeSkill, "agents", "openai.yml"))).toBe(false);
+      expect(await exists(join(claudeSkill, "agents", "openai.yaml"))).toBe(false);
 
       const removal = await runCliAt(root, ["remove"]);
 
       expect(removal).toMatchObject({ code: 0, stderr: "" });
       expect(removal.stdout).toContain("Removed 3 managed links");
       expect(await exists(join(codexSkill, "SKILL.md"))).toBe(false);
-      expect(await exists(join(codexSkill, "agents", "openai.yml"))).toBe(false);
+      expect(await exists(join(codexSkill, "agents", "openai.yaml"))).toBe(false);
       expect(await exists(join(claudeSkill, "SKILL.md"))).toBe(false);
-      expect(await exists(join(skillRoot, "agents", "openai.yml"))).toBe(true);
+      expect(await exists(join(skillRoot, "agents", "openai.yaml"))).toBe(true);
       expect(await exists(codexSkill)).toBe(false);
       await expect(loadManagedState(root)).resolves.toMatchObject({
         entries: [],

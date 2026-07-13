@@ -341,6 +341,10 @@ function buildMappings(
   const skills = [...discoveredSkills].sort((left, right) =>
     compareText(left.name, right.name),
   );
+  const openAiMetadataPaths = new Set([
+    pathApi.join("agents", "openai.yaml"),
+    pathApi.join("agents", "openai.yml"),
+  ]);
 
   for (const placement of placements) {
     for (const skill of skills) {
@@ -349,10 +353,11 @@ function buildMappings(
       );
 
       for (const file of files) {
-        if (file.skillRelativePath === pathApi.join("agents", "openai.yml")) {
-          if (placement.harnessId !== "codex") {
-            continue;
-          }
+        if (
+          placement.harnessId !== "codex" &&
+          openAiMetadataPaths.has(file.skillRelativePath)
+        ) {
+          continue;
         }
 
         const sourcePath = normalizeAbsolutePath(file.absolutePath, style);
