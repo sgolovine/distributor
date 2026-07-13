@@ -53,7 +53,9 @@ prompts when run interactively. In a non-interactive terminal, use `--yes`.
 
 Each non-hidden directory immediately under the source root is one skill. It
 must contain a regular file named exactly `SKILL.md`; nested assets, references,
-and scripts are preserved as file links.
+and scripts are preserved as independent file links. The optional
+`agents/openai.yml` file is emitted only to Codex targets and is omitted from
+Claude, Cline, and every other non-Codex target.
 
 ## Commands
 
@@ -71,6 +73,7 @@ distributor init -y                 # same as --yes
 distributor sync                    # sync every enabled harness
 distributor sync --harness codex    # sync one enabled harness
 distributor sync --dry-run          # plan without writing
+distributor remove                  # remove every managed link
 ```
 
 `--harness <id>` may appear only once and must name an available harness that
@@ -243,7 +246,10 @@ link value Distributor recorded.
 - A managed target becomes stale when its source disappears, its harness is
   removed, or its placement changes. Stale targets are reported and left
   untouched, and stale-only runs succeed.
-- There is no automatic cleanup or `--clean` flag in this release.
+- `distributor remove` removes every recorded target that is still the exact
+  symbolic link Distributor recorded. Missing targets are cleared from state;
+  changed links and non-links are reported and preserved. Empty target
+  directories are left in place.
 
 ## Exit codes
 
@@ -256,6 +262,7 @@ link value Distributor recorded.
 ## Initial-release scope
 
 All sixteen harnesses in the configuration specification are available. This
-release intentionally has no force mode, copy or junction fallback, managed
-cleanup, transforms, generated artifacts, or content/frontmatter rewriting.
-Distributor creates direct file symlinks and never directory symlinks.
+release intentionally has no force mode, copy or junction fallback, automatic
+cleanup during sync, transforms, generated artifacts, or content/frontmatter
+rewriting. Distributor creates direct file symlinks and never directory
+symlinks.

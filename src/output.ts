@@ -3,6 +3,7 @@ import picocolors from "picocolors";
 import { DistributorError } from "./errors.js";
 import { displayPath } from "./filesystem/paths.js";
 import type { InitResult } from "./init/run-init.js";
+import type { RunRemoveResult } from "./remove/run-remove.js";
 import type {
   HarnessSyncCounts,
   RunSyncResult,
@@ -23,6 +24,7 @@ export interface CliOutput {
   writeErr(text: string): void;
   printError(error: unknown): void;
   printInit(result: InitResult): void;
+  printRemove(result: RunRemoveResult): void;
   printSync(result: RunSyncResult): void;
 }
 
@@ -91,6 +93,27 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       writeOut(`Initialized Distributor at ${result.projectRoot}.\n`);
       for (const outcome of result.outcomes) {
         writeOut(`${outcome.artifact}: ${outcome.status} ${outcome.path}\n`);
+      }
+    },
+    printRemove(result) {
+      writeOut(
+        `Removed ${result.counts.removed} managed link${result.counts.removed === 1 ? "" : "s"}; ${result.counts.missing} already missing, ${result.counts.failed} failed.\n`,
+      );
+      for (const warning of result.warnings) {
+        const location =
+          warning.path === undefined
+            ? ""
+            : `${formatDiagnosticPath(warning.path, result.projectRoot)}: `;
+        writeOut(colors.yellow(`Warning: ${location}${warning.message}\n`));
+      }
+      for (const operation of result.operations) {
+        if (operation.status === "failed") {
+          writeErr(
+            colors.red(
+              `Error: ${formatDiagnosticPath(operation.targetPath, result.projectRoot)}: ${operation.message ?? "Removal failed."}\n`,
+            ),
+          );
+        }
       }
     },
     printSync(result) {

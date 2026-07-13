@@ -115,6 +115,33 @@ describe("resolvePlacements", () => {
     ]);
   });
 
+  it("maps agents/openai.yml only for Codex", () => {
+    const sourceRoot = "/project/source";
+    const result = resolvePlacements(
+      projectConfig("/project", sourceRoot, [
+        automatic("claude-code"),
+        automatic("codex"),
+        automatic("opencode"),
+      ]),
+      discovery(sourceRoot, [
+        skill(sourceRoot, "review", ["SKILL.md", "agents/openai.yml"]),
+      ]),
+      { pathStyle: "posix" },
+    );
+
+    const openAiConfigMappings = result.mappings.filter(
+      (mapping) => mapping.sourcePath === "/project/source/review/agents/openai.yml",
+    );
+
+    expect(openAiConfigMappings).toHaveLength(1);
+    expect(openAiConfigMappings[0]?.attributions).toEqual([
+      { harnessId: "codex", placementId: "project" },
+    ]);
+    expect(result.mappings.filter((mapping) =>
+      mapping.sourcePath.endsWith("/SKILL.md"),
+    )).toHaveLength(3);
+  });
+
   it("filters to one enabled harness and rejects invalid selections", () => {
     const sourceRoot = "/project/source";
     const config = projectConfig("/project", sourceRoot, [

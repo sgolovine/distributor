@@ -28,7 +28,10 @@ import { runInit } from "../../src/init/run-init.js";
 import { createOutput } from "../../src/output.js";
 import { applySyncPlan } from "../../src/sync/apply.js";
 import { runSync, type RunSyncResult } from "../../src/sync/run-sync.js";
-import { statePathForProject } from "../../src/sync/state.js";
+import {
+  loadManagedState,
+  statePathForProject,
+} from "../../src/sync/state.js";
 import { useFixture } from "../helpers/fixture.js";
 
 const ALL_HARNESSES = [
@@ -466,6 +469,63 @@ describe("Distributor initial-release acceptance matrix", () => {
         await exists(join(root, ".claude", "skills", "review", "SKILL.md")),
       ).toBe(false);
       expect(await exists(statePathForProject(root))).toBe(false);
+    });
+  });
+
+  it("links OpenAI metadata only to Codex and removes every managed file link", async () => {
+    await useFixture(async (root) => {
+      await writeFile(
+        join(root, "distributor.config.json"),
+        `${JSON.stringify({
+          source: ".source/skills",
+          harnesses: [
+            {
+              name: "codex",
+              targets: [{ placement: "project", path: ".codex/skills" }],
+            },
+            {
+              name: "claude-code",
+              targets: [{ placement: "project", path: ".claude/skills" }],
+            },
+          ],
+        }, null, 2)}\n`,
+        "utf8",
+      );
+      const skillRoot = join(root, ".source", "skills", "review");
+      await mkdir(join(skillRoot, "agents"), { recursive: true });
+      await writeFile(
+        join(skillRoot, "SKILL.md"),
+        "---\nname: review\ndescription: Review code.\n---\n",
+        "utf8",
+      );
+      await writeFile(
+        join(skillRoot, "agents", "openai.yml"),
+        "interface:\n  display_name: Review\n",
+        "utf8",
+      );
+
+      const sync = await runSync({ cwd: root });
+      const codexSkill = join(root, ".codex", "skills", "review");
+      const claudeSkill = join(root, ".claude", "skills", "review");
+
+      expect(sync.exitCode).toBe(0);
+      expect((await lstat(join(codexSkill, "SKILL.md"))).isSymbolicLink()).toBe(true);
+      expect(
+        (await lstat(join(codexSkill, "agents", "openai.yml"))).isSymbolicLink(),
+      ).toBe(true);
+      expect((await lstat(join(claudeSkill, "SKILL.md"))).isSymbolicLink()).toBe(true);
+      expect(await exists(join(claudeSkill, "agents", "openai.yml"))).toBe(false);
+
+      const removal = await runCliAt(root, ["remove"]);
+
+      expect(removal).toMatchObject({ code: 0, stderr: "" });
+      expect(removal.stdout).toContain("Removed 3 managed links");
+      expect(await exists(join(codexSkill, "SKILL.md"))).toBe(false);
+      expect(await exists(join(codexSkill, "agents", "openai.yml"))).toBe(false);
+      expect(await exists(join(claudeSkill, "SKILL.md"))).toBe(false);
+      expect(await exists(join(skillRoot, "agents", "openai.yml"))).toBe(true);
+      expect((await lstat(codexSkill)).isDirectory()).toBe(true);
+      expect((await loadManagedState(root)).entries).toEqual([]);
     });
   });
 

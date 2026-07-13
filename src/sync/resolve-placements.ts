@@ -349,6 +349,13 @@ function buildMappings(
       );
 
       for (const file of files) {
+        if (
+          placement.harnessId !== "codex" &&
+          file.skillRelativePath === pathApi.join("agents", "openai.yml")
+        ) {
+          continue;
+        }
+
         const sourcePath = normalizeAbsolutePath(file.absolutePath, style);
         const expectedSourcePath = pathApi.resolve(
           sourceRoot,

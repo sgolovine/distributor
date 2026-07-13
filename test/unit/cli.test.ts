@@ -7,6 +7,7 @@ import {
 import { DistributorError } from "../../src/errors.js";
 import type { InitResult } from "../../src/init/run-init.js";
 import { createOutput } from "../../src/output.js";
+import type { RunRemoveResult } from "../../src/remove/run-remove.js";
 import type { RunSyncResult } from "../../src/sync/run-sync.js";
 
 const VERSION = "9.8.7";
@@ -114,6 +115,18 @@ describe("Distributor CLI", () => {
     expect(context.stderr()).toBe("");
   });
 
+  it("runs remove and reports managed-link cleanup", async () => {
+    const context = testContext();
+
+    expect(await context.run(["remove"])).toBe(0);
+
+    expect(context.runRemove).toHaveBeenCalledWith({ cwd: "/workspace" });
+    expect(context.stdout()).toBe(
+      "Removed 2 managed links; 1 already missing, 0 failed.\n",
+    );
+    expect(context.stderr()).toBe("");
+  });
+
   it("renders empty-source guidance, stale counts, and warning details", async () => {
     const base = syncResult({ dryRun: false });
     const staleOperations = {
@@ -214,12 +227,16 @@ function testContext(runtime: Partial<CliRuntime> = {}): {
   readonly stdout: () => string;
   readonly stderr: () => string;
   readonly runInit: ReturnType<typeof vi.fn>;
+  readonly runRemove: ReturnType<typeof vi.fn>;
   readonly runSync: ReturnType<typeof vi.fn>;
 } {
   let stdout = "";
   let stderr = "";
   const runInit = vi.fn(
     runtime.runInit ?? (async () => initResult()),
+  );
+  const runRemove = vi.fn(
+    runtime.runRemove ?? (async () => removeResult()),
   );
   const runSync = vi.fn(
     runtime.runSync ?? (async () => syncResult()),
@@ -241,12 +258,28 @@ function testContext(runtime: Partial<CliRuntime> = {}): {
         cwd: "/workspace",
         isInteractive: false,
         output,
-        runtime: { runInit, runSync },
+        runtime: { runInit, runRemove, runSync },
       }),
     stdout: () => stdout,
     stderr: () => stderr,
     runInit,
+    runRemove,
     runSync,
+  };
+}
+
+function removeResult(): RunRemoveResult {
+  return {
+    exitCode: 0,
+    projectRoot: "/project",
+    operations: [
+      { targetPath: "/project/one", status: "removed" },
+      { targetPath: "/project/two", status: "removed" },
+      { targetPath: "/project/three", status: "missing" },
+    ],
+    warnings: [],
+    stateWritten: true,
+    counts: { removed: 2, missing: 1, failed: 0 },
   };
 }
 

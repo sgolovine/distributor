@@ -51,14 +51,15 @@ reportable no-op.
 - Distributor does not validate harness-specific runtime behavior.
 - Distributor does not make non-standard skill features portable.
 - Distributor does not copy files when symbolic links are unavailable.
-- The initial release does not transform skill content, overwrite conflicts,
-  remove stale targets, or auto-enable detected harnesses.
+- Sync does not transform skill content, overwrite conflicts, remove stale
+  targets, or auto-enable detected harnesses. Explicit removal is provided by
+  the `remove` command.
 
 ## Initial Release Scope
 
 The initial release includes:
 
-- `help`, `version`, `init`, and `sync` commands.
+- `help`, `version`, `init`, `sync`, and `remove` commands.
 - `--help`, `--version`, `--harness`, and `--dry-run` flags.
 - Agent Skills as the canonical source format.
 - All harness adapters listed in `CONFIG_SPEC.md`.
@@ -66,6 +67,7 @@ The initial release includes:
 - User-scoped targets only when explicitly selected in project configuration.
 - Direct, file-level symbolic links without content transformation.
 - Project-local managed-file state and stale-target reporting.
+- Safe removal of unchanged links recorded in managed state.
 
 Every stable harness ID in `CONFIG_SPEC.md` is available.
 
@@ -476,6 +478,8 @@ Additional safety rules:
   root must warn that moving or deleting the project will break that target.
 - If multiple harnesses plan an identical target/source mapping, the filesystem
   operation is deduplicated and attributed to each harness in the report.
+- A skill's `agents/openai.yml` file is mapped only to Codex placements and is
+  omitted from every other harness placement.
 - If two planned mappings would write different sources to one target path,
   planning fails before writes.
 
@@ -503,7 +507,7 @@ entries. A `--harness` sync evaluates stale entries only for the selected
 harness and leaves other entries unchanged.
 
 Adoption is safe because it changes only state; it does not replace the existing
-symlink. Stale targets are reported but not removed in the initial release.
+symlink. Stale targets are reported but not removed by sync.
 
 The planner must inspect all requested harnesses before apply begins. Any
 conflict makes the plan non-applicable and exits `1` without target or state
@@ -592,9 +596,9 @@ A target becomes stale when its source file disappears, its harness is removed
 from config, or placement resolution changes. Initial-release sync must report
 stale managed targets and leave them untouched.
 
-Automatic cleanup and a future `--clean` flag may remove only targets that still
-satisfy the managed ownership and tamper checks. Cleanup is not an
-initial-release requirement.
+`remove` deletes only targets that still satisfy the managed ownership and
+tamper checks. Changed targets are preserved and reported as failures. Sync
+does not perform automatic cleanup.
 
 ## Transformation Model
 
@@ -725,7 +729,7 @@ by automated tests:
 
 Later releases may add transformed artifacts, include/exclude
 patterns, machine-readable output, explicit conflict-resolution workflows,
-managed cleanup, skill package/plugin distribution, and additional config
-formats.
+automatic managed cleanup, skill package/plugin distribution, and additional
+config formats.
 None of these may weaken the initial release's ownership, conflict, scope, or
 dry-run guarantees.

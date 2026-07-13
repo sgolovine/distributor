@@ -9,10 +9,12 @@ import type { ExitCode } from "./errors.js";
 import { DistributorError } from "./errors.js";
 import { runInit } from "./init/run-init.js";
 import { createOutput, type CliOutput } from "./output.js";
+import { runRemove } from "./remove/run-remove.js";
 import { runSync } from "./sync/run-sync.js";
 
 export interface CliRuntime {
   readonly runInit: typeof runInit;
+  readonly runRemove: typeof runRemove;
   readonly runSync: typeof runSync;
 }
 
@@ -28,7 +30,7 @@ export interface RunCliOptions extends CliProgramOptions {
   readonly version: string;
 }
 
-const defaultRuntime: CliRuntime = { runInit, runSync };
+const defaultRuntime: CliRuntime = { runInit, runRemove, runSync };
 
 export function createProgram(
   version: string,
@@ -81,6 +83,17 @@ export function createProgram(
       output.printInit(result);
     });
 
+  program
+    .command("remove")
+    .description("Remove every unchanged symbolic link managed by Distributor.")
+    .action(async () => {
+      const result = await runtime.runRemove({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      });
+      output.printRemove(result);
+      reportExitCode(result.exitCode);
+    });
+
   const harnessOption = new Option(
     "--harness <harness-id>",
     "Limit sync to one enabled harness.",
@@ -118,6 +131,7 @@ export function createProgram(
     `
 Command flags:
   distributor init [-y|--yes]
+  distributor remove
   distributor sync [--harness <harness-id>] [--dry-run]
 
 Examples:
@@ -125,6 +139,7 @@ Examples:
   distributor sync
   distributor sync --harness claude-code
   distributor sync --dry-run
+  distributor remove
 
 Exit codes:
   0  success, including no-op and warning-only runs
