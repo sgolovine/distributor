@@ -427,13 +427,13 @@ Dependencies: Phases 2 and 7.
     whether or not the target appears in the desired plan.
 
 - [ ] **8.3 Scope stale evaluation correctly.**
-  - A full sync reports every recorded, still-owned target absent from the full
-    desired plan as stale.
+  - A full sync reports and removes every recorded, still-owned target absent
+    from the full desired plan as stale.
   - A selected-harness sync evaluates/removes no attribution belonging to other
     harnesses and reports stale only for the selected harness. Preserve shared
     and untouched attribution when merging successful results into state.
-  - Stale targets and their still-valid state entries remain in place; initial
-    release never deletes them.
+  - Remove a stale target only after revalidating its exact recorded ownership,
+    then remove its state entry and any empty managed parent directories.
   - Drop an entry for a missing target from the next state within the evaluation
     scope when it is not desired; do not report it as stale. Preserve entries
     outside a selected-harness evaluation scope unchanged.
@@ -512,9 +512,9 @@ Dependencies: Phase 9.
     invalidate later assumptions silently.
 
 - [ ] **10.3 Build post-apply state from observed successes.**
-  - Include successfully created, updated, or adopted mappings; include skipped
-    and stale entries only while their ownership remains valid; preserve
-    untouched harness attributions in a selected-harness run.
+  - Include successfully created, updated, adopted, or skipped mappings. Remove
+    successfully cleaned stale entries while preserving untouched harness
+    attributions in a selected-harness run.
   - After a failed mutation, reinspect the target. Retain the prior state entry
     only when the target still satisfies that entry's exact recorded ownership;
     for example, an update failure that leaves the original raw symlink value
@@ -671,7 +671,7 @@ agent can prove completion without inferring coverage from unit tests.
 | 5         | A second identical sync performs no target writes, reports skips, and retains deterministic state/output.                                    |
 | 6         | Each unmanaged file, directory, changed managed symlink, and escaping parent case prevents every planned target/state write.                 |
 | 7         | Dry run produces the same applicable plan/counts as sync while a recursive before/after snapshot proves no metadata or content changed.      |
-| 8         | Removing a source file reports its previously managed target as stale without deleting the target or ownership record.                       |
+| 8         | Removing a source file reports its previously managed target as stale, removes the unchanged managed link, and clears its ownership record.   |
 | 9         | Invalid config, invalid skills, unavailable adapters, and Windows symlink limitations emit actionable context and the specified exit code.   |
 | 10        | Compile/snapshot tests prove config examples, adapter metadata, generated defaults, and schema-inferred public types agree across the specs. |
 

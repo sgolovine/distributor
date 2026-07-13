@@ -109,6 +109,11 @@ interface ParentChain {
   readonly targetParent: string;
 }
 
+interface RemovedManagedDirectory {
+  readonly path: string;
+  readonly physicalPath: string;
+}
+
 type TargetInspection =
   | { readonly kind: "absent" }
   | { readonly kind: "symlink"; readonly linkValue: string }
@@ -207,6 +212,7 @@ export async function applySyncPlan(
         priorEntry,
         resolution,
         plan.sourceRootIdentity,
+        options.harnessId,
         filesystem,
         platform,
         reservedPhysicalTargets,
@@ -216,7 +222,10 @@ export async function applySyncPlan(
         operation,
         status,
         targetLinkMutated:
-          operation.kind === "create" || operation.kind === "update",
+          operation.kind === "create" ||
+          operation.kind === "update" ||
+          (operation.kind === "stale" &&
+            staleRemovesTarget(priorEntry, options.harnessId)),
       });
       recordSuccessfulOperation(
         nextEntries,
@@ -253,6 +262,11 @@ export async function applySyncPlan(
     }
   }
 
+  const removedDirectories = await removeEmptyManagedDirectories(
+    managedDirectories,
+    filesystem,
+  );
+
   const nextState: ManagedState = {
     version: 1,
     entries: [...nextEntries.values()].sort(compareStateEntries),
@@ -275,6 +289,7 @@ export async function applySyncPlan(
   } catch (error) {
     const persistenceFailure = stateFailure(loadedState.path, error);
     failures.push(persistenceFailure);
+    await restoreRemovedDirectories(removedDirectories, filesystem);
     await reconcileAfterPersistenceFailure(
       operationResults,
       priorByTarget,
@@ -305,6 +320,55 @@ export async function applySyncPlan(
     statePersisted,
     stateWritten,
   };
+}
+
+async function removeEmptyManagedDirectories(
+  managedDirectories: Map<string, string>,
+  filesystem: ApplyFilesystem,
+): Promise<RemovedManagedDirectory[]> {
+  const removed: RemovedManagedDirectory[] = [];
+  const directories = [...managedDirectories.entries()].sort(
+    (left, right) => right[1].length - left[1].length,
+  );
+
+  for (const [key, directory] of directories) {
+    try {
+      const physicalPath = await filesystem.realpath(directory);
+      await filesystem.rmdir(directory);
+      managedDirectories.delete(key);
+      removed.push({ path: directory, physicalPath });
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        managedDirectories.delete(key);
+      }
+    }
+  }
+
+  return removed;
+}
+
+async function restoreRemovedDirectories(
+  directories: readonly RemovedManagedDirectory[],
+  filesystem: ApplyFilesystem,
+): Promise<void> {
+  for (const directory of [...directories].sort(
+    (left, right) => left.path.length - right.path.length,
+  )) {
+    try {
+      const currentPhysicalPath = await resolvePhysicalTargetPath(
+        directory.path,
+        filesystem,
+      );
+      if (!pathsAreEquivalent(currentPhysicalPath, directory.physicalPath)) {
+        continue;
+      }
+      await filesystem.mkdir(directory.path);
+    } catch (error) {
+      if (errorCode(error) !== "EEXIST") {
+        continue;
+      }
+    }
+  }
 }
 
 async function rollbackCreatedDirectories(
@@ -360,10 +424,13 @@ async function reconcileAfterPersistenceFailure(
     const failedMutation =
       result.status === "failed" &&
       result.targetLinkMutated &&
-      (result.operation.kind === "create" || result.operation.kind === "update");
+      (result.operation.kind === "create" ||
+        result.operation.kind === "update" ||
+        result.operation.kind === "stale");
     if (
       result.status !== "created" &&
       result.status !== "updated" &&
+      !(result.status === "stale" && result.targetLinkMutated) &&
       !failedMutation
     ) {
       continue;
@@ -377,6 +444,27 @@ async function reconcileAfterPersistenceFailure(
     }
 
     try {
+      if (result.operation.kind === "stale") {
+        await rollbackRemovedManagedLink(
+          result.operation,
+          priorEntry,
+          reservedPhysicalTargets,
+          filesystem,
+          platform,
+        );
+        if (!failedMutation) {
+          results[index] = {
+            operation: result.operation,
+            status: "failed",
+            targetLinkMutated: true,
+            failure: operationPersistenceFailure(
+              result.operation,
+              persistenceFailure,
+            ),
+          };
+        }
+        continue;
+      }
       if (failedMutation) {
         const current = await inspectTarget(
           result.operation.targetPath,
@@ -442,6 +530,48 @@ async function reconcileAfterPersistenceFailure(
       };
     }
   }
+}
+
+async function rollbackRemovedManagedLink(
+  operation: PlanOperation,
+  priorEntry: ManagedStateEntry,
+  reservedPhysicalTargets: ReadonlyMap<string, string>,
+  filesystem: ApplyFilesystem,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  const expectedPhysicalTarget = reservedPhysicalTargetKey(
+    operation,
+    reservedPhysicalTargets,
+  );
+  if (expectedPhysicalTarget === undefined) {
+    throw new OperationFailure(
+      "parent",
+      "The physical stale target used during apply was not recorded for rollback.",
+      "Review the target and rebuild the sync plan before retrying.",
+    );
+  }
+
+  await requirePhysicalRollbackTarget(
+    operation,
+    expectedPhysicalTarget,
+    filesystem,
+  );
+  const target = await inspectTarget(operation.targetPath, filesystem);
+  if (target.kind !== "absent") {
+    throw targetRaceFailure(operation.targetPath, target);
+  }
+
+  try {
+    await filesystem.symlink(
+      priorEntry.linkValue,
+      operation.targetPath,
+      "file",
+    );
+  } catch (error) {
+    throw symlinkFailure(operation.targetPath, error, platform, true);
+  }
+
+  await requireExactOwnership(operation, priorEntry, filesystem);
 }
 
 async function rollbackManagedMutation(
@@ -616,6 +746,7 @@ async function applyOperation(
   priorEntry: ManagedStateEntry | undefined,
   resolution: PlacementResolution,
   sourceRootIdentity: SourceRootIdentity,
+  harnessId: string | undefined,
   filesystem: ApplyFilesystem,
   platform: NodeJS.Platform,
   reservedPhysicalTargets: Map<string, string>,
@@ -624,6 +755,33 @@ async function applyOperation(
   if (operation.kind === "stale") {
     requirePriorOwnership(operation, priorEntry);
     await requireExactOwnership(operation, priorEntry, filesystem);
+    if (!staleRemovesTarget(priorEntry, harnessId)) {
+      return "stale";
+    }
+    await reservePhysicalTarget(
+      operation,
+      reservedPhysicalTargets,
+      filesystem,
+    );
+    try {
+      await filesystem.unlink(operation.targetPath);
+    } catch (error) {
+      throw new OperationFailure(
+        "target",
+        `Could not remove the stale managed link: ${operation.targetPath}`,
+        "Fix the target permissions and rerun sync; unmanaged content was not overwritten.",
+        { cause: error },
+      );
+    }
+    const afterRemoval = await inspectTarget(operation.targetPath, filesystem);
+    if (afterRemoval.kind !== "absent") {
+      throw new OperationFailure(
+        "target",
+        `Target changed after its stale managed link was removed: ${operation.targetPath}`,
+        "Review the raced target and rerun sync; Distributor will not overwrite it.",
+        { targetLinkMutated: true },
+      );
+    }
     return "stale";
   }
 
@@ -986,8 +1144,22 @@ function recordSuccessfulOperation(
   harnessId: string | undefined,
 ): void {
   if (operation.kind === "stale") {
-    if (priorEntry !== undefined) {
-      entries.set(pathComparisonKey(operation.targetPath), priorEntry);
+    if (priorEntry === undefined) {
+      return;
+    }
+    const remainingAttributions =
+      harnessId === undefined
+        ? []
+        : priorEntry.attributions.filter(
+            (attribution) => attribution.harnessId !== harnessId,
+          );
+    if (remainingAttributions.length === 0) {
+      entries.delete(pathComparisonKey(operation.targetPath));
+    } else {
+      entries.set(pathComparisonKey(operation.targetPath), {
+        ...priorEntry,
+        attributions: remainingAttributions,
+      });
     }
     return;
   }
@@ -1003,6 +1175,19 @@ function recordSuccessfulOperation(
     linkValue: operation.linkValue,
     attributions,
   });
+}
+
+function staleRemovesTarget(
+  priorEntry: ManagedStateEntry | undefined,
+  harnessId: string | undefined,
+): boolean {
+  return (
+    priorEntry !== undefined &&
+    (harnessId === undefined ||
+      priorEntry.attributions.every(
+        (attribution) => attribution.harnessId === harnessId,
+      ))
+  );
 }
 
 function mergeAttributions(

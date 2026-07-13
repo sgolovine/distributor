@@ -244,8 +244,8 @@ link value Distributor recorded.
 - Independent apply-time failures may leave other successful operations in
   place and recorded; the run exits `1` and remains safe to retry.
 - A managed target becomes stale when its source disappears, its harness is
-  removed, or its placement changes. Stale targets are reported and left
-  untouched, and stale-only runs succeed.
+  removed, or its placement changes. Stale targets are removed during sync
+  after Distributor verifies that the recorded link is unchanged.
 - `distributor remove` removes every recorded target that is still the exact
   symbolic link Distributor recorded. Missing targets are cleared from state;
   changed links and non-links are reported and preserved. Empty target

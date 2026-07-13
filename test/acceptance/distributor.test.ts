@@ -348,21 +348,15 @@ describe("Distributor initial-release acceptance matrix", () => {
     });
   });
 
-  it("criterion 8: removed source files become stale without target or state deletion", async () => {
+  it("criterion 8: removing a source skill removes its managed targets and state", async () => {
     await useFixture(async (root) => {
       await runInit({ cwd: root, yes: true });
       await writeSkill(root, "review", {
         "references/checklist.md": "# Checklist\n",
       });
       await runSync({ cwd: root });
-      const source = join(
-        root,
-        ".agents",
-        "skills",
-        "review",
-        "references",
-        "checklist.md",
-      );
+      const sourceSkill = join(root, ".agents", "skills", "review");
+      const targetSkill = join(root, ".claude", "skills", "review");
       const target = join(
         root,
         ".claude",
@@ -371,24 +365,29 @@ describe("Distributor initial-release acceptance matrix", () => {
         "references",
         "checklist.md",
       );
-      const rawLink = await readlink(target);
-      const stateBefore = await readFile(statePathForProject(root), "utf8");
-      await rm(source);
+      await rm(sourceSkill, { recursive: true });
 
       const result = await runSync({ cwd: root });
 
       expect(result.exitCode).toBe(0);
-      expect(result.counts.stale).toBe(4);
+      expect(result.counts.stale).toBeGreaterThan(0);
       expect(
         result.applyResult?.operations.some(
           (operation) => operation.operation.kind === "stale",
         ),
       ).toBe(true);
-      expect((await lstat(target)).isSymbolicLink()).toBe(true);
-      expect(await readlink(target)).toBe(rawLink);
-      expect(await readFile(statePathForProject(root), "utf8")).toBe(
-        stateBefore,
-      );
+      await expect(lstat(join(targetSkill, "SKILL.md"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(lstat(target)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(targetSkill)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(loadManagedState(root)).resolves.toMatchObject({
+        entries: expect.not.arrayContaining([
+          expect.objectContaining({
+            sourcePath: expect.stringContaining(sourceSkill),
+          }),
+        ]),
+      });
     });
   });
 

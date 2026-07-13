@@ -51,9 +51,8 @@ reportable no-op.
 - Distributor does not validate harness-specific runtime behavior.
 - Distributor does not make non-standard skill features portable.
 - Distributor does not copy files when symbolic links are unavailable.
-- Sync does not transform skill content, overwrite conflicts, remove stale
-  targets, or auto-enable detected harnesses. Explicit removal is provided by
-  the `remove` command.
+- Sync does not transform skill content, overwrite conflicts, or auto-enable
+  detected harnesses.
 
 ## Initial Release Scope
 
@@ -66,7 +65,7 @@ The initial release includes:
 - Project-scoped targets by default.
 - User-scoped targets only when explicitly selected in project configuration.
 - Direct, file-level symbolic links without content transformation.
-- Project-local managed-file state and stale-target reporting.
+- Project-local managed-file state and stale-target cleanup.
 - Safe removal of unchanged links recorded in managed state.
 
 Every stable harness ID in `CONFIG_SPEC.md` is available.
@@ -507,7 +506,8 @@ entries. A `--harness` sync evaluates stale entries only for the selected
 harness and leaves other entries unchanged.
 
 Adoption is safe because it changes only state; it does not replace the existing
-symlink. Stale targets are reported but not removed by sync.
+symlink. Sync removes stale targets only while their recorded ownership remains
+valid.
 
 The planner must inspect all requested harnesses before apply begins. Any
 conflict makes the plan non-applicable and exits `1` without target or state
@@ -593,12 +593,13 @@ Ownership and tamper rules:
 ### Stale Targets And Cleanup
 
 A target becomes stale when its source file disappears, its harness is removed
-from config, or placement resolution changes. Initial-release sync must report
-stale managed targets and leave them untouched.
+from config, or placement resolution changes. Sync must remove stale managed
+targets after verifying that each target is still the exact recorded symbolic
+link. A filtered sync must retain a shared target while an unselected harness
+still owns it.
 
 `remove` deletes only targets that still satisfy the managed ownership and
-tamper checks. Changed targets are preserved and reported as failures. Sync
-does not perform automatic cleanup.
+tamper checks. Changed targets are preserved and reported as failures.
 
 ## Transformation Model
 
@@ -691,7 +692,7 @@ Required coverage:
 - deterministic plan ordering and duplicate-operation deduplication;
 - target creation, exact-link adoption, skip, update, and conflict behavior;
 - state ownership, tamper detection, corrupt state, and atomic state writes;
-- stale-target reporting without deletion;
+- stale-target removal with ownership and tamper checks;
 - dry run producing no filesystem writes;
 - directory collisions and symlinked-parent escape attempts;
 - relative project links and absolute external links;
@@ -719,8 +720,8 @@ by automated tests:
    planned writes.
 7. Dry run reports the same applicable plan as sync and changes no filesystem
    metadata or content.
-8. Removing a source file reports its prior managed target as stale without
-   deleting it.
+8. Removing a source file reports its prior managed target as stale and removes
+   the unchanged managed link.
 9. Invalid config, invalid skills, unknown adapters, and Windows symlink
    limitations produce the specified exit code and actionable error.
 10. The examples and shared types in all three spec files agree.

@@ -119,9 +119,42 @@ describe("resolvePlacements", () => {
     const sourceRoot = "/project/source";
     const result = resolvePlacements(
       projectConfig("/project", sourceRoot, [
-        automatic("claude-code"),
-        automatic("codex"),
-        automatic("opencode"),
+        explicit(
+          "antigravity",
+          placement("antigravity", "project"),
+          "/project/targets/antigravity",
+          true,
+        ),
+        explicit(
+          "claude-code",
+          placement("claude-code", "project"),
+          "/project/targets/claude-code",
+          true,
+        ),
+        explicit(
+          "codex",
+          placement("codex", "project"),
+          "/project/targets/codex",
+          true,
+        ),
+        explicit(
+          "goose",
+          placement("goose", "project"),
+          "/project/targets/goose",
+          true,
+        ),
+        explicit(
+          "openhands",
+          placement("openhands", "project"),
+          "/project/targets/openhands",
+          true,
+        ),
+        explicit(
+          "opencode",
+          placement("opencode", "project"),
+          "/project/targets/opencode",
+          true,
+        ),
       ]),
       discovery(sourceRoot, [
         skill(sourceRoot, "review", ["SKILL.md", "agents/openai.yml"]),
@@ -139,7 +172,7 @@ describe("resolvePlacements", () => {
     ]);
     expect(result.mappings.filter((mapping) =>
       mapping.sourcePath.endsWith("/SKILL.md"),
-    )).toHaveLength(3);
+    )).toHaveLength(6);
   });
 
   it("filters to one enabled harness and rejects invalid selections", () => {

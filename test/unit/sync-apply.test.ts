@@ -812,7 +812,7 @@ describe("applySyncPlan target mutations", () => {
 });
 
 describe("applySyncPlan state merging", () => {
-  it("preserves shared attributions for a selected-harness stale target", async () => {
+  it("drops only the selected attribution for a shared stale target", async () => {
     await useFixture(async (root) => {
       const fixture = await mappingFixture(root);
       await createTargetLink(fixture.mapping, fixture.mapping.linkValue);
@@ -831,7 +831,94 @@ describe("applySyncPlan state merging", () => {
       });
 
       expect(result.operations[0]?.status).toBe("stale");
-      expect(result.nextState.entries).toEqual([shared]);
+      expect(result.operations[0]?.targetLinkMutated).toBe(false);
+      expect(result.nextState.entries).toEqual([
+        { ...shared, attributions: [OPENCODE] },
+      ]);
+      expect(await readlink(fixture.targetPath)).toBe(fixture.mapping.linkValue);
+    });
+  });
+
+  it("removes an exact stale link and its ownership", async () => {
+    await useFixture(async (root) => {
+      const fixture = await mappingFixture(root);
+      await createTargetLink(fixture.mapping, fixture.mapping.linkValue);
+      const entry = stateEntry(fixture.mapping, fixture.mapping.linkValue);
+      const loaded = {
+        ...loadedState(root, [entry]),
+        directories: [fixture.targetRoot, dirname(fixture.targetPath)],
+      };
+      const input = emptyResolution();
+      const plan = await buildSyncPlan(input, loaded);
+
+      const result = await applySyncPlan(plan, input, loaded, root);
+
+      expect(result.operations[0]).toMatchObject({
+        status: "stale",
+        targetLinkMutated: true,
+      });
+      expect(result.nextState.entries).toEqual([]);
+      await expect(lstat(fixture.targetPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(lstat(dirname(fixture.targetPath))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    });
+  });
+
+  it("retains stale ownership when link removal fails", async () => {
+    await useFixture(async (root) => {
+      const fixture = await mappingFixture(root);
+      await createTargetLink(fixture.mapping, fixture.mapping.linkValue);
+      const entry = stateEntry(fixture.mapping, fixture.mapping.linkValue);
+      const loaded = {
+        ...loadedState(root, [entry]),
+        directories: [fixture.targetRoot, dirname(fixture.targetPath)],
+      };
+      const input = emptyResolution();
+      const plan = await buildSyncPlan(input, loaded);
+
+      const result = await applySyncPlan(plan, input, loaded, root, {
+        filesystem: {
+          unlink: async () => {
+            throw new Error("unlink denied");
+          },
+        },
+      });
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        targetLinkMutated: false,
+      });
+      expect(result.nextState.entries).toEqual([entry]);
+      expect(await readlink(fixture.targetPath)).toBe(fixture.mapping.linkValue);
+    });
+  });
+
+  it("restores a removed stale link when state persistence fails", async () => {
+    await useFixture(async (root) => {
+      const fixture = await mappingFixture(root);
+      await createTargetLink(fixture.mapping, fixture.mapping.linkValue);
+      const entry = stateEntry(fixture.mapping, fixture.mapping.linkValue);
+      const loaded = {
+        ...loadedState(root, [entry]),
+        directories: [fixture.targetRoot, dirname(fixture.targetPath)],
+      };
+      const input = emptyResolution();
+      const plan = await buildSyncPlan(input, loaded);
+
+      const result = await applySyncPlan(plan, input, loaded, root, {
+        persistState: async () => {
+          throw new Error("state write denied");
+        },
+      });
+
+      expect(result.operations[0]).toMatchObject({
+        status: "failed",
+        targetLinkMutated: true,
+      });
+      expect(result.nextState.entries).toEqual([entry]);
       expect(await readlink(fixture.targetPath)).toBe(fixture.mapping.linkValue);
     });
   });
