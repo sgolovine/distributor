@@ -1,5 +1,5 @@
 {
-  "name": "distributor",
+  "name": "@sunnygg/distributor",
   "version": "1.0.0",
   "description": "Synchronize Agent Skills across supported agent harnesses.",
   "type": "module",
