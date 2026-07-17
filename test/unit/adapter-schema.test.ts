@@ -92,6 +92,15 @@ describe("HarnessConfigSchema", () => {
     expect(HarnessConfigSchema.parse(validConfig())).toEqual(validConfig());
   });
 
+  it("allows sources and verifiedAt to be omitted", () => {
+    const config = validConfig({
+      sources: undefined,
+      verifiedAt: undefined,
+    });
+
+    expect(HarnessConfigSchema.parse(config)).toEqual(config);
+  });
+
   it("rejects unknown config fields", () => {
     expect(() =>
       HarnessConfigSchema.parse(validConfig({ unexpected: true })),

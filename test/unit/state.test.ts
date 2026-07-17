@@ -315,7 +315,7 @@ describe("managed state", () => {
       });
       expect(
         await readFile(join(root, ".distributor", ".gitignore"), "utf8"),
-      ).toBe("*\n!.gitignore\n");
+      ).toBe("*\n!.gitignore\n!adapters/\n!adapters/**\n");
       expect(await readFile(statePathForProject(root), "utf8")).toBe(
         serializeManagedState(state, root),
       );

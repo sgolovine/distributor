@@ -8,7 +8,7 @@ import {
 import type { ExitCode } from "./errors.js";
 import { DistributorError } from "./errors.js";
 import { runInit } from "./init/run-init.js";
-import { createOutput, type CliOutput } from "./output.js";
+import { type CliOutput, createOutput } from "./output.js";
 import { runRemove } from "./remove/run-remove.js";
 import { runStatus } from "./status/run-status.js";
 import { runSync } from "./sync/run-sync.js";
@@ -53,8 +53,7 @@ export function createProgram(
     .configureOutput({
       writeOut: output.writeOut,
       writeErr: output.writeErr,
-      outputError: (text, write) =>
-        write(text.replace(/^error:/i, "Error:")),
+      outputError: (text, write) => write(text.replace(/^error:/i, "Error:")),
     });
 
   program.addHelpCommand(
@@ -161,7 +160,7 @@ Exit codes:
   2  invalid invocation or project configuration
 
 Trust boundary:
-  JavaScript and TypeScript project configs are trusted executable code.
+  JavaScript and TypeScript project configs and custom adapters are trusted executable code.
   Skill Markdown, YAML, scripts, and assets are read as data and never executed.
 `,
   );

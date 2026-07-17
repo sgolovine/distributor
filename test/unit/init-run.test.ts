@@ -32,7 +32,8 @@ const DEFAULT_CONFIG_CONTENTS = `{
 }
 `;
 
-const IGNORE_CONTENTS = "*\n!.gitignore\n";
+const IGNORE_CONTENTS =
+  "*\n!.gitignore\n!adapters/\n!adapters/**\n";
 
 async function exists(path: string): Promise<boolean> {
   try {

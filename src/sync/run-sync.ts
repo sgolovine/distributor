@@ -1,3 +1,4 @@
+import { loadAdapterRegistry } from "../adapters/index.js";
 import { discoverConfig } from "../config/discover.js";
 import {
   loadProjectConfig,
@@ -142,7 +143,11 @@ export async function runSync(
 ): Promise<RunSyncResult> {
   const runtime: RunSyncRuntime = { ...defaultRuntime, ...options.runtime };
   const cwd = options.cwd ?? process.cwd();
-  const configOptions = validationOptions(options);
+  const adapterRegistry = await loadAdapterRegistry(cwd);
+  const configOptions = {
+    ...validationOptions(options),
+    adapterRegistry,
+  };
   const discovered = await runtime.discoverConfig(cwd);
   const config = await runtime.loadProjectConfig(discovered, configOptions);
   const skills = await runtime.discoverSkills(config.sourceRoot);

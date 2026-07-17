@@ -47,8 +47,8 @@ export const HarnessConfigSchema = z
     supportsNativeSkills: z.boolean(),
     defaultProjectPlacementId: z.string().min(1).optional(),
     placements: z.array(HarnessPlacementSchema).min(1),
-    sources: z.array(z.string().url()).min(1),
-    verifiedAt: z.iso.date(),
+    sources: z.array(z.string().url()).min(1).optional(),
+    verifiedAt: z.iso.date().optional(),
   })
   .strict()
   .superRefine((config, context) => {

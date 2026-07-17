@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { input } from "zod";
 
-import type { DistributorConfig } from "../../src/index.js";
+import type {
+  DistributorConfig,
+  HarnessConfig,
+} from "../../src/index.js";
 import { DistributorConfigSchema } from "../../src/config/schema.js";
 
 type Equal<Left, Right> =
@@ -19,11 +22,30 @@ const documentedConfig = {
   harnesses: ["codex", "claude-code", "opencode"],
 } satisfies DistributorConfig;
 
+const customAdapter = {
+  name: "example",
+  displayName: "Example",
+  adapterStatus: "available",
+  supportsNativeSkills: true,
+  defaultProjectPlacementId: "project",
+  placements: [
+    {
+      id: "project",
+      item: "skills",
+      support: "native",
+      scope: "project",
+      defaultPath: ".example/skills",
+      createIfMissing: true,
+    },
+  ],
+} satisfies HarnessConfig;
+
 describe("public DistributorConfig type", () => {
   it("is inferred from the runtime schema input", () => {
     expect(publicTypeIsSchemaInput).toBe(true);
     expect(DistributorConfigSchema.parse(documentedConfig).source).toBe(
       ".agents/skills",
     );
+    expect(customAdapter.name).toBe("example");
   });
 });

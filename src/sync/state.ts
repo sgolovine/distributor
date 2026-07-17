@@ -56,7 +56,8 @@ export interface StatePersistenceResult {
   readonly warnings: readonly PlanNotice[];
 }
 
-const STATE_IGNORE_CONTENTS = "*\n!.gitignore\n";
+const STATE_IGNORE_CONTENTS =
+  "*\n!.gitignore\n!adapters/\n!adapters/**\n";
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;

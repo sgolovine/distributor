@@ -202,6 +202,68 @@ loaded by Distributor. Use them only when you trust the project. Skill
 Markdown, YAML, scripts, references, and assets are read as data and are never
 executed by Distributor.
 
+## Writing custom adapters
+
+Distributor loads custom adapters from `.distributor/adapters` in the exact
+directory where the command is run. It reads immediate files ending in
+`.json`, `.js`, or `.ts`; other files and nested directories are ignored.
+The adapter's `name` field is its harness ID, regardless of the filename.
+
+JSON files contain the adapter object directly. JavaScript and TypeScript files
+must default-export it. Import the public `HarnessConfig` type to check a
+TypeScript adapter:
+
+```ts
+import type { HarnessConfig } from "distributor";
+
+const adapter = {
+  name: "team-agent",
+  displayName: "Team Agent",
+  adapterStatus: "available",
+  supportsNativeSkills: true,
+  defaultProjectPlacementId: "project",
+  placements: [
+    {
+      id: "project",
+      item: "skills",
+      support: "native",
+      scope: "project",
+      defaultPath: ".team-agent/skills",
+      createIfMissing: true,
+    },
+    {
+      id: "user",
+      item: "skills",
+      support: "native",
+      scope: "user",
+      defaultPath: "~/.team-agent/skills",
+      createIfMissing: true,
+    },
+  ],
+} satisfies HarnessConfig;
+
+export default adapter;
+```
+
+`sources` and `verifiedAt` are optional. When present, `sources` must be a
+non-empty array of URLs and `verifiedAt` must be an ISO date such as
+`2026-07-17`.
+
+Adapter IDs must be unique across built-in and custom adapters. Distributor
+stops with an error instead of overriding either adapter when it finds a
+duplicate. Available custom adapters can be named in project configuration and
+are included in both interactive initialization and `distributor init --yes`.
+
+JavaScript and TypeScript adapters are trusted executable code and run when
+Distributor loads them. Commit only adapters you trust. New initialization
+metadata keeps `.distributor/adapters` visible to Git while ignoring local
+state; existing `.distributor/.gitignore` files may need these rules:
+
+```gitignore
+!adapters/
+!adapters/**
+```
+
 ## Available adapters and placements
 
 | Harness ID       | Automatic project behavior                                                                                             | Explicit selectable placements                                                                        |

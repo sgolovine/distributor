@@ -1,3 +1,4 @@
+import { loadAdapterRegistry } from "../adapters/index.js";
 import { discoverConfig } from "../config/discover.js";
 import {
   loadProjectConfig,
@@ -9,8 +10,8 @@ import {
 } from "../skills/discover.js";
 import { buildSyncPlan } from "../sync/plan.js";
 import {
-  resolvePlacements,
   type PlacementResolution,
+  resolvePlacements,
 } from "../sync/resolve-placements.js";
 import { loadManagedState } from "../sync/state.js";
 
@@ -51,8 +52,10 @@ export async function runStatus(
 ): Promise<RunStatusResult> {
   const runtime: RunStatusRuntime = { ...defaultRuntime, ...options.runtime };
   const cwd = options.cwd ?? process.cwd();
+  const adapterRegistry = await loadAdapterRegistry(cwd);
   const discovered = await runtime.discoverConfig(cwd);
   const config = await runtime.loadProjectConfig(discovered, {
+    adapterRegistry,
     ...(options.homeDirectory === undefined
       ? {}
       : { homeDirectory: options.homeDirectory }),

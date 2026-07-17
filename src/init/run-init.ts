@@ -4,9 +4,8 @@ import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import {
-  adapterCatalog,
-  isAvailableAdapterId,
-  type AvailableAdapterId,
+  getRegistryAvailableConfig,
+  loadAdapterRegistry,
 } from "../adapters/index.js";
 import { supportedConfigsAt } from "../config/discover.js";
 import {
@@ -24,15 +23,8 @@ import {
 const GENERATED_CONFIG_NAME = "distributor.config.json";
 const STATE_DIRECTORY_NAME = ".distributor";
 const STATE_IGNORE_NAME = ".gitignore";
-const STATE_IGNORE_CONTENTS = "*\n!.gitignore\n";
-
-const availableHarnessChoices = adapterCatalog.flatMap((entry) =>
-  isAvailableAdapterId(entry.name)
-    ? [{ name: entry.name, displayName: entry.displayName }]
-    : [],
-);
-
-const defaultHarnesses = availableHarnessChoices.map((choice) => choice.name);
+const STATE_IGNORE_CONTENTS =
+  "*\n!.gitignore\n!adapters/\n!adapters/**\n";
 
 export interface InitSelections {
   readonly source: string;
@@ -41,9 +33,9 @@ export interface InitSelections {
 
 export interface InitPromptContext {
   readonly defaultSource: string;
-  readonly defaultHarnesses: readonly AvailableAdapterId[];
+  readonly defaultHarnesses: readonly string[];
   readonly harnesses: readonly {
-    name: AvailableAdapterId;
+    name: string;
     displayName: string;
   }[];
 }
@@ -115,7 +107,7 @@ export async function promptForInitSelections(
     throw cancelledPrompt();
   }
 
-  const harnesses = await multiselect<AvailableAdapterId>({
+  const harnesses = await multiselect<string>({
     message: "Which harnesses should use these skills?",
     options: context.harnesses.map((harness) => ({
       value: harness.name,
@@ -236,13 +228,22 @@ async function buildInitPlan(options: RunInitOptions): Promise<InitPlan> {
   const existingConfigPath = matches[0];
   const configPath =
     existingConfigPath ?? join(projectRoot, GENERATED_CONFIG_NAME);
+  const adapterRegistry = await loadAdapterRegistry(projectRoot);
+  const availableHarnessChoices = adapterRegistry.catalog.flatMap((entry) =>
+    getRegistryAvailableConfig(adapterRegistry, entry.name) === undefined
+      ? []
+      : [{ name: entry.name, displayName: entry.displayName }],
+  );
+  const defaultHarnesses = availableHarnessChoices.map(
+    (choice) => choice.name,
+  );
   let configContents: string | undefined;
   let sourceRoot: string;
 
   if (existingConfigPath !== undefined) {
     const config = await loadProjectConfig(
       { configPath: existingConfigPath, projectRoot },
-      options,
+      { ...options, adapterRegistry },
     );
     sourceRoot = config.sourceRoot;
   } else {
@@ -273,7 +274,7 @@ async function buildInitPlan(options: RunInitOptions): Promise<InitPlan> {
         harnesses: [...selections.harnesses],
       },
       { configPath, projectRoot },
-      options,
+      { ...options, adapterRegistry },
     );
     sourceRoot = config.sourceRoot;
     configContents = serializeConfig(selections);

@@ -2,11 +2,11 @@ import { extname } from "node:path";
 import { homedir } from "node:os";
 
 import {
-  adapterCatalog,
-  getAdapterCatalogEntry,
-  getAvailableAdapterConfig,
-  isAvailableAdapterId,
-  type AvailableAdapterId,
+  availableAdapterIds,
+  builtInAdapterRegistry,
+  getRegistryAvailableConfig,
+  getRegistryCatalogEntry,
+  type AdapterRegistry,
   type HarnessPlacement,
 } from "../adapters/index.js";
 import {
@@ -34,7 +34,7 @@ export interface ValidatedTargetSelection {
 }
 
 export interface ValidatedHarnessSelection {
-  readonly name: AvailableAdapterId;
+  readonly name: string;
   readonly targets: readonly ValidatedTargetSelection[] | undefined;
 }
 
@@ -43,18 +43,15 @@ export interface ValidatedProjectConfig {
   readonly projectRoot: string;
   readonly sourceRoot: string;
   readonly harnesses: readonly ValidatedHarnessSelection[];
+  readonly adapterRegistry?: AdapterRegistry;
 }
 
 export interface ValidateConfigOptions {
   readonly homeDirectory?: string;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly pathStyle?: PathStyle;
+  readonly adapterRegistry?: AdapterRegistry;
 }
-
-const availableHarnessIds = adapterCatalog
-  .filter((entry) => entry.adapterStatus === "available")
-  .map((entry) => entry.name)
-  .join(", ");
 
 function valueAtPath(value: unknown, path: readonly PropertyKey[]): unknown {
   let current = value;
@@ -176,6 +173,9 @@ export function validateProjectConfig(
   options: ValidateConfigOptions = {},
 ): ValidatedProjectConfig {
   const parsed = parseConfigShape(rawConfig, discovered.configPath);
+  const adapterRegistry =
+    options.adapterRegistry ?? builtInAdapterRegistry;
+  const availableHarnesses = availableAdapterIds(adapterRegistry);
   const homeDirectory = options.homeDirectory ?? homedir();
   const environment = options.environment ?? process.env;
   const issues: ValidationIssue[] = [];
@@ -216,32 +216,31 @@ export function validateProjectConfig(
     }
     seenHarnesses.set(name, harnessIndex);
 
-    const catalogEntry = getAdapterCatalogEntry(name);
+    const catalogEntry = getRegistryCatalogEntry(adapterRegistry, name);
     if (catalogEntry === undefined) {
       issues.push({
         message: `unknown harness ${JSON.stringify(name)}`,
         path: fieldPath,
         received: name,
-        expected: availableHarnessIds,
+        expected: availableHarnesses,
         correction: "Use an available harness ID.",
       });
       continue;
     }
     if (
-      catalogEntry.adapterStatus !== "available" ||
-      !isAvailableAdapterId(name)
+      catalogEntry.adapterStatus !== "available"
     ) {
       issues.push({
         message: `harness ${JSON.stringify(name)} is ${catalogEntry.adapterStatus}, not available`,
         path: fieldPath,
         received: name,
         expected: "an available harness",
-        correction: `Remove this harness or choose one of: ${availableHarnessIds}.`,
+        correction: `Remove this harness or choose one of: ${availableHarnesses}.`,
       });
       continue;
     }
 
-    const adapter = getAvailableAdapterConfig(name);
+    const adapter = getRegistryAvailableConfig(adapterRegistry, name);
     if (adapter === undefined) {
       throw new Error(`Available adapter metadata is missing for ${name}.`);
     }
@@ -351,6 +350,7 @@ export function validateProjectConfig(
     projectRoot: discovered.projectRoot,
     sourceRoot,
     harnesses: harnesses.sort((left, right) => left.name.localeCompare(right.name)),
+    adapterRegistry,
   };
 }
 

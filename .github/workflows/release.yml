@@ -1,0 +1,82 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create GitHub release from main
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.package.outputs.tag }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify packed package
+        run: pnpm package:smoke
+
+      - name: Read package version
+        id: package
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Ensure tag does not exist
+        run: |
+          git fetch --tags --force
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists."
+            exit 1
+          fi
+        env:
+          TAG: ${{ steps.package.outputs.tag }}
+
+      - name: Create GitHub release
+        run: |
+          target_sha="$(git rev-parse HEAD)"
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --target "${target_sha}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+
+  publish:
+    name: Publish package
+    needs: create-release
+    uses: ./.github/workflows/publish.yml
+    with:
+      ref: ${{ needs.create-release.outputs.tag }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

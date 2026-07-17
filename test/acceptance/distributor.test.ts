@@ -59,7 +59,8 @@ const DEFAULT_CONFIG = `{
 }
 `;
 
-const DEFAULT_IGNORE = "*\n!.gitignore\n";
+const DEFAULT_IGNORE =
+  "*\n!.gitignore\n!adapters/\n!adapters/**\n";
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <

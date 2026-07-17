@@ -2,9 +2,11 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
 import {
-  adapterCatalog,
-  getAdapterCatalogEntry,
-  getAvailableAdapterConfig,
+  availableAdapterIds,
+  builtInAdapterRegistry,
+  getRegistryAvailableConfig,
+  getRegistryCatalogEntry,
+  type AdapterRegistry,
   type HarnessPlacement,
 } from "../adapters/index.js";
 import type {
@@ -49,11 +51,6 @@ export interface PlacementResolution {
   readonly warnings: readonly PlanNotice[];
 }
 
-const availableHarnessIds = adapterCatalog
-  .filter((entry) => entry.adapterStatus === "available")
-  .map((entry) => entry.name)
-  .join(", ");
-
 export interface ResolvePlacementsOptions {
   readonly harness?: string;
   readonly homeDirectory?: string;
@@ -92,13 +89,18 @@ export function resolvePlacements(
       },
     );
   }
-  const selectedHarnesses = selectHarnesses(config.harnesses, options.harness);
+  const adapterRegistry = config.adapterRegistry ?? builtInAdapterRegistry;
+  const selectedHarnesses = selectHarnesses(
+    config.harnesses,
+    options.harness,
+    adapterRegistry,
+  );
   const placements: ResolvedTargetPlacement[] = [];
   const satisfiedPlacements: SatisfiedPlacement[] = [];
   const warnings: PlanNotice[] = [];
 
   for (const harness of selectedHarnesses) {
-    const adapter = getAvailableAdapterConfig(harness.name);
+    const adapter = getRegistryAvailableConfig(adapterRegistry, harness.name);
     if (adapter === undefined || adapter.defaultProjectPlacementId === undefined) {
       throw new Error(`Available adapter metadata is incomplete for ${harness.name}.`);
     }
@@ -205,6 +207,7 @@ export function resolvePlacements(
 function selectHarnesses(
   configured: readonly ValidatedHarnessSelection[],
   requested: string | undefined,
+  adapterRegistry: AdapterRegistry,
 ): ValidatedHarnessSelection[] {
   if (requested === undefined) {
     return [...configured].sort((left, right) =>
@@ -212,12 +215,12 @@ function selectHarnesses(
     );
   }
 
-  const catalogEntry = getAdapterCatalogEntry(requested);
+  const catalogEntry = getRegistryCatalogEntry(adapterRegistry, requested);
   if (catalogEntry === undefined) {
     throw harnessSelectionError(
       `Unknown harness ${JSON.stringify(requested)}.`,
       requested,
-      `Use one of: ${availableHarnessIds}.`,
+      `Use one of: ${availableAdapterIds(adapterRegistry)}.`,
     );
   }
   if (catalogEntry.adapterStatus !== "available") {

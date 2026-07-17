@@ -145,7 +145,7 @@ describe("available adapter configurations", () => {
         name,
       ).toBe(expectedDefaultPath);
       expect(
-        config?.sources.every((source) => URL.canParse(source)),
+        config?.sources?.every((source) => URL.canParse(source)),
         name,
       ).toBe(true);
     }

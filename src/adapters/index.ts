@@ -8,6 +8,7 @@ import geminiCliConfig from "./gemini-cli.config.js";
 import githubCopilotConfig from "./github-copilot.config.js";
 import gooseConfig from "./goose.config.js";
 import {
+  adapterCatalog,
   type AvailableAdapterId,
   isAvailableAdapterId,
 } from "./catalog.js";
@@ -22,6 +23,11 @@ import {
   parseHarnessConfig,
   type HarnessConfig,
 } from "./schema.js";
+import {
+  createAdapterRegistry,
+  loadCustomAdapterRegistry,
+  type AdapterRegistry,
+} from "./registry.js";
 
 export const availableAdapterConfigs: Readonly<
   Record<AvailableAdapterId, HarnessConfig>
@@ -54,6 +60,15 @@ export function getAvailableAdapterConfig(
   return availableAdapterConfigs[name];
 }
 
+export const builtInAdapterRegistry = createAdapterRegistry(
+  adapterCatalog,
+  availableAdapterConfigs,
+);
+
+export function loadAdapterRegistry(cwd: string): Promise<AdapterRegistry> {
+  return loadCustomAdapterRegistry(cwd, builtInAdapterRegistry);
+}
+
 export {
   adapterCatalog,
   getAdapterCatalogEntry,
@@ -71,6 +86,11 @@ export {
   HarnessPlacementSupportSchema,
   parseHarnessConfig,
 } from "./schema.js";
+export {
+  availableAdapterIds,
+  getRegistryAvailableConfig,
+  getRegistryCatalogEntry,
+} from "./registry.js";
 export type {
   AdapterCatalogEntry,
   AdapterStatus,
@@ -79,3 +99,4 @@ export type {
   HarnessPlacementScope,
   HarnessPlacementSupport,
 } from "./schema.js";
+export type { AdapterRegistry } from "./registry.js";
