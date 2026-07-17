@@ -4,30 +4,58 @@ Distributor synchronizes one canonical [Agent Skills](https://agentskills.io/)
 tree across sixteen agent harnesses. It creates managed file-level symbolic
 links, detects conflicts before writing, and never executes skill content.
 
-## Requirements and installation
+## Getting started
 
-- Node.js 22 or newer
-- pnpm 11 when installing with pnpm or working from source
+Distributor requires Node.js 22 or newer.
 
-Install the CLI globally:
-
-```sh
-pnpm add --global distributor
-```
-
-To build this checkout instead:
+Install [the published package](https://www.npmjs.com/package/@sunnygg/distributor)
+globally:
 
 ```sh
-pnpm install
-pnpm build
-pnpm link --global
+npm install -g @sunnygg/distributor
 ```
+
+Then initialize Distributor in your project and sync your skills:
+
+```sh
+distributor init
+distributor sync
+```
+
+To run Distributor without installing it globally, use `npx`:
+
+```sh
+npx @sunnygg/distributor init
+npx @sunnygg/distributor sync
+```
+
+`init` prompts you to configure the source directory and target harnesses. Use
+`distributor init --yes` (or `npx @sunnygg/distributor init --yes`) to accept
+the defaults without prompts. After initialization, run `sync` whenever you
+want to synchronize your skills across the configured harnesses.
+
+### Basic commands
+
+```sh
+distributor init                    # initialize interactively
+distributor init --yes              # initialize with defaults
+distributor status                  # show skill and reference status
+distributor sync                    # sync every enabled harness
+distributor sync --harness codex    # sync one enabled harness
+distributor sync --dry-run          # preview changes without writing
+distributor remove                  # remove every managed link
+distributor --help                  # show help
+distributor --version               # print the installed version
+```
+
+The examples below use the globally installed `distributor` command. You can
+replace it with `npx @sunnygg/distributor` in any command.
 
 On Windows, enable Developer Mode or otherwise grant permission to create file
 symbolic links before syncing. Distributor does not fall back to copies or
 junctions when symlink creation is unavailable.
 
-## Quick start
+## Add your first skill
 
 Initialize a project with the defaults, add a skill, inspect the plan, and
 sync it:
@@ -57,7 +85,7 @@ and scripts are preserved as independent file links. The optional
 `agents/openai.yaml` (or `agents/openai.yml`) is emitted only to Codex targets
 and omitted from Claude, Cline, and every other non-Codex target.
 
-## Commands
+## Command details
 
 ```sh
 distributor                         # show help
@@ -170,7 +198,7 @@ JavaScript and TypeScript configs use the same shape and must default-export
 their value:
 
 ```ts
-import type { DistributorConfig } from "distributor";
+import type { DistributorConfig } from "@sunnygg/distributor";
 
 const config = {
   source: ".agents/skills",
@@ -214,7 +242,7 @@ must default-export it. Import the public `HarnessConfig` type to check a
 TypeScript adapter:
 
 ```ts
-import type { HarnessConfig } from "distributor";
+import type { HarnessConfig } from "@sunnygg/distributor";
 
 const adapter = {
   name: "team-agent",
