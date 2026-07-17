@@ -1,13 +1,13 @@
 {
   "name": "@sunnygg/distributor",
-  "version": "1.0.0",
   "description": "Synchronize Agent Skills across supported agent harnesses.",
+  "author": "Sunny Golovine",
+  "version": "1.0.0",
+  "license": "MIT",
   "type": "module",
-  "license": "ISC",
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@11.10.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -28,14 +28,6 @@
     "agent-skills",
     "cli"
   ],
-  "author": "",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.10.0",
-      "onFail": "download"
-    }
-  },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
     "commander": "^15.0.0",
