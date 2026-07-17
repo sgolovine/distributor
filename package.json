@@ -24,17 +24,6 @@
     "README.md",
     "LICENSE"
   ],
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/set-bin-mode.mjs",
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest",
-    "test:windows-symlinks": "node scripts/check-windows-symlink.mjs && vitest run test/unit/path-primitives.test.ts test/unit/sync-apply.test.ts test/unit/state.test.ts",
-    "smoke:cli": "pnpm build && node dist/bin.js --help",
-    "prepack": "pnpm build",
-    "pack:check": "pnpm pack --dry-run",
-    "package:smoke": "node scripts/verify-package.mjs"
-  },
   "keywords": [
     "agent-skills",
     "cli"
@@ -61,5 +50,16 @@
     "@types/node": "^26.1.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
-  }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/set-bin-mode.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "test:windows-symlinks": "node scripts/check-windows-symlink.mjs && vitest run test/unit/path-primitives.test.ts test/unit/sync-apply.test.ts test/unit/state.test.ts",
+    "smoke:cli": "pnpm build && node dist/bin.js --help",
+    "prepack": "pnpm build",
+    "pack:check": "pnpm pack --dry-run",
+    "package:smoke": "node scripts/verify-package.mjs"
+  },
 }
