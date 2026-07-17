@@ -4,6 +4,7 @@ import { DistributorError } from "./errors.js";
 import { displayPath } from "./filesystem/paths.js";
 import type { InitResult } from "./init/run-init.js";
 import type { RunRemoveResult } from "./remove/run-remove.js";
+import type { RunStatusResult } from "./status/run-status.js";
 import type {
   HarnessSyncCounts,
   RunSyncResult,
@@ -25,6 +26,7 @@ export interface CliOutput {
   printError(error: unknown): void;
   printInit(result: InitResult): void;
   printRemove(result: RunRemoveResult): void;
+  printStatus(result: RunStatusResult): void;
   printSync(result: RunSyncResult): void;
 }
 
@@ -124,6 +126,18 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
           );
         }
       }
+    },
+    printStatus(result) {
+      writeOut(`Skills: ${result.skills}\n`);
+      writeOut(`Active references: ${result.references}\n`);
+      if (result.upToDate) {
+        writeOut("References are up to date.\n");
+        return;
+      }
+      writeOut("References are out of date.\n");
+      writeOut(
+        "Run `distributor sync` to bring your references up to date.\n",
+      );
     },
     printSync(result) {
       writeOut(formatSyncHeading(result));

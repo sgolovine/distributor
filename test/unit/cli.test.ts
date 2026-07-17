@@ -8,6 +8,7 @@ import { DistributorError } from "../../src/errors.js";
 import type { InitResult } from "../../src/init/run-init.js";
 import { createOutput } from "../../src/output.js";
 import type { RunRemoveResult } from "../../src/remove/run-remove.js";
+import type { RunStatusResult } from "../../src/status/run-status.js";
 import type { RunSyncResult } from "../../src/sync/run-sync.js";
 
 const VERSION = "9.8.7";
@@ -29,8 +30,10 @@ describe("Distributor CLI", () => {
     expect(first.stdout()).toContain("Exit codes:");
     expect(first.stdout()).toContain("trusted executable code");
     expect(first.runInit).not.toHaveBeenCalled();
+    expect(first.runStatus).not.toHaveBeenCalled();
     expect(first.runSync).not.toHaveBeenCalled();
     expect(short.runInit).not.toHaveBeenCalled();
+    expect(short.runStatus).not.toHaveBeenCalled();
     expect(short.runSync).not.toHaveBeenCalled();
   });
 
@@ -123,6 +126,23 @@ describe("Distributor CLI", () => {
     expect(context.runRemove).toHaveBeenCalledWith({ cwd: "/workspace" });
     expect(context.stdout()).toBe(
       "Removed 2 managed links; 1 already missing, 0 failed.\n",
+    );
+    expect(context.stderr()).toBe("");
+  });
+
+  it("reports skill and reference status with sync guidance", async () => {
+    const context = testContext({
+      runStatus: async () => statusResult({ upToDate: false }),
+    });
+
+    expect(await context.run(["status"])).toBe(0);
+
+    expect(context.runStatus).toHaveBeenCalledWith({ cwd: "/workspace" });
+    expect(context.stdout()).toBe(
+      "Skills: 3\n" +
+        "Active references: 6\n" +
+        "References are out of date.\n" +
+        "Run `distributor sync` to bring your references up to date.\n",
     );
     expect(context.stderr()).toBe("");
   });
@@ -228,6 +248,7 @@ function testContext(runtime: Partial<CliRuntime> = {}): {
   readonly stderr: () => string;
   readonly runInit: ReturnType<typeof vi.fn>;
   readonly runRemove: ReturnType<typeof vi.fn>;
+  readonly runStatus: ReturnType<typeof vi.fn>;
   readonly runSync: ReturnType<typeof vi.fn>;
 } {
   let stdout = "";
@@ -237,6 +258,9 @@ function testContext(runtime: Partial<CliRuntime> = {}): {
   );
   const runRemove = vi.fn(
     runtime.runRemove ?? (async () => removeResult()),
+  );
+  const runStatus = vi.fn(
+    runtime.runStatus ?? (async () => statusResult()),
   );
   const runSync = vi.fn(
     runtime.runSync ?? (async () => syncResult()),
@@ -258,12 +282,13 @@ function testContext(runtime: Partial<CliRuntime> = {}): {
         cwd: "/workspace",
         isInteractive: false,
         output,
-        runtime: { runInit, runRemove, runSync },
+        runtime: { runInit, runRemove, runStatus, runSync },
       }),
     stdout: () => stdout,
     stderr: () => stderr,
     runInit,
     runRemove,
+    runStatus,
     runSync,
   };
 }
@@ -306,6 +331,19 @@ function initResult(): InitResult {
       },
     ],
     noOp: false,
+  };
+}
+
+function statusResult(
+  options: { readonly upToDate?: boolean } = {},
+): RunStatusResult {
+  return {
+    exitCode: 0,
+    projectRoot: "/project",
+    sourceRoot: "/project/.agents/skills",
+    skills: 3,
+    references: 6,
+    upToDate: options.upToDate ?? true,
   };
 }
 

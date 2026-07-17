@@ -10,11 +10,13 @@ import { DistributorError } from "./errors.js";
 import { runInit } from "./init/run-init.js";
 import { createOutput, type CliOutput } from "./output.js";
 import { runRemove } from "./remove/run-remove.js";
+import { runStatus } from "./status/run-status.js";
 import { runSync } from "./sync/run-sync.js";
 
 export interface CliRuntime {
   readonly runInit: typeof runInit;
   readonly runRemove: typeof runRemove;
+  readonly runStatus: typeof runStatus;
   readonly runSync: typeof runSync;
 }
 
@@ -30,7 +32,7 @@ export interface RunCliOptions extends CliProgramOptions {
   readonly version: string;
 }
 
-const defaultRuntime: CliRuntime = { runInit, runRemove, runSync };
+const defaultRuntime: CliRuntime = { runInit, runRemove, runStatus, runSync };
 
 export function createProgram(
   version: string,
@@ -94,6 +96,16 @@ export function createProgram(
       reportExitCode(result.exitCode);
     });
 
+  program
+    .command("status")
+    .description("Show skill and reference status.")
+    .action(async () => {
+      const result = await runtime.runStatus({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      });
+      output.printStatus(result);
+    });
+
   const harnessOption = new Option(
     "--harness <harness-id>",
     "Limit sync to one enabled harness.",
@@ -132,10 +144,12 @@ export function createProgram(
 Command flags:
   distributor init [-y|--yes]
   distributor remove
+  distributor status
   distributor sync [--harness <harness-id>] [--dry-run]
 
 Examples:
   distributor init --yes
+  distributor status
   distributor sync
   distributor sync --harness claude-code
   distributor sync --dry-run
