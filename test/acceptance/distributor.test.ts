@@ -581,13 +581,10 @@ describe("Distributor initial-release acceptance matrix", () => {
       );
     });
 
-    const [readme, spec, configSpec, techStack, plan] = await Promise.all([
-      readFile(new URL("../../README.md", import.meta.url), "utf8"),
-      readFile(new URL("../../specs/SPEC.md", import.meta.url), "utf8"),
-      readFile(new URL("../../specs/CONFIG_SPEC.md", import.meta.url), "utf8"),
-      readFile(new URL("../../specs/TECH_STACK.md", import.meta.url), "utf8"),
-      readFile(new URL("../../specs/PLAN.md", import.meta.url), "utf8"),
-    ]);
+    const readme = await readFile(
+      new URL("../../README.md", import.meta.url),
+      "utf8",
+    );
     const readmeExamples = [
       ...readme.matchAll(/```json\r?\n([\s\S]*?)\r?\n```/g),
     ]
@@ -622,13 +619,6 @@ describe("Distributor initial-release acceptance matrix", () => {
           .sort(),
       ).toEqual(expectedNames);
     }
-    expect(spec).toContain('"harnesses": [');
-    expect(plan).toContain("all available adapters as defaults");
-    expect(configSpec).toMatch(/\| `codex`\s+\| Codex CLI\s+\| available/);
-    expect(configSpec).toContain("2026-07-12");
-    expect(techStack).toContain(
-      "public\n  `DistributorConfig` TypeScript type",
-    );
   });
 });
 

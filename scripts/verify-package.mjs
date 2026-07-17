@@ -4,8 +4,8 @@ import {
   lstat,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -273,9 +273,10 @@ function run(command, args, options = {}) {
       shell: options.shell ?? false,
       stdio: ["ignore", "pipe", "pipe"],
     };
-    const child = options.argumentsAreEmbedded === true
-      ? spawn(command, spawnOptions)
-      : spawn(command, args, spawnOptions);
+    const child =
+      options.argumentsAreEmbedded === true
+        ? spawn(command, spawnOptions)
+        : spawn(command, args, spawnOptions);
     let stdout = "";
     let stderr = "";
 

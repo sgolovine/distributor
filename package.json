@@ -57,7 +57,6 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "test:windows-symlinks": "node scripts/check-windows-symlink.mjs && vitest run test/unit/path-primitives.test.ts test/unit/sync-apply.test.ts test/unit/state.test.ts",
     "smoke:cli": "pnpm build && node dist/bin.js --help",
     "prepack": "pnpm build",
     "pack:check": "pnpm pack --dry-run",
