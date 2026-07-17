@@ -221,7 +221,6 @@ const adapter = {
   displayName: "Team Agent",
   adapterStatus: "available",
   supportsNativeSkills: true,
-  defaultProjectPlacementId: "project",
   placements: [
     {
       id: "project",
@@ -229,14 +228,6 @@ const adapter = {
       support: "native",
       scope: "project",
       defaultPath: ".team-agent/skills",
-      createIfMissing: true,
-    },
-    {
-      id: "user",
-      item: "skills",
-      support: "native",
-      scope: "user",
-      defaultPath: "~/.team-agent/skills",
       createIfMissing: true,
     },
   ],
@@ -248,6 +239,11 @@ export default adapter;
 `sources` and `verifiedAt` are optional. When present, `sources` must be a
 non-empty array of URLs and `verifiedAt` must be an ISO date such as
 `2026-07-17`.
+
+An available adapter may omit `defaultProjectPlacementId` when it declares
+exactly one placement; Distributor uses that placement as the default.
+Adapters with multiple placements must identify their default project
+placement explicitly.
 
 Adapter IDs must be unique across built-in and custom adapters. Distributor
 stops with an error instead of overriding either adapter when it finds a

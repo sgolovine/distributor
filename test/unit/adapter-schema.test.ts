@@ -92,6 +92,14 @@ describe("HarnessConfigSchema", () => {
     expect(HarnessConfigSchema.parse(validConfig())).toEqual(validConfig());
   });
 
+  it("uses the only placement as the default", () => {
+    const config = validConfig({ defaultProjectPlacementId: undefined });
+
+    expect(HarnessConfigSchema.parse(config)).toMatchObject({
+      defaultProjectPlacementId: "project",
+    });
+  });
+
   it("allows sources and verifiedAt to be omitted", () => {
     const config = validConfig({
       sources: undefined,
@@ -120,9 +128,29 @@ describe("HarnessConfigSchema", () => {
     },
   );
 
-  it("requires a default project placement for an available adapter", () => {
+  it("requires a default project placement for an available adapter with multiple placements", () => {
     const result = HarnessConfigSchema.safeParse(
-      validConfig({ defaultProjectPlacementId: undefined }),
+      validConfig({
+        defaultProjectPlacementId: undefined,
+        placements: [
+          {
+            id: "project",
+            item: "skills",
+            support: "native",
+            scope: "project",
+            defaultPath: ".example/skills",
+            createIfMissing: true,
+          },
+          {
+            id: "user",
+            item: "skills",
+            support: "native",
+            scope: "user",
+            defaultPath: "~/.example/skills",
+            createIfMissing: true,
+          },
+        ],
+      }),
     );
 
     expect(result.success).toBe(false);
@@ -131,7 +159,8 @@ describe("HarnessConfigSchema", () => {
         expect.arrayContaining([
           expect.objectContaining({
             path: ["defaultProjectPlacementId"],
-            message: "is required for an available adapter",
+            message:
+              "is required for an available adapter with multiple placements",
           }),
         ]),
       );

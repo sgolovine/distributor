@@ -182,7 +182,6 @@ function customAdapter(
     displayName: `${name} display`,
     adapterStatus: "available",
     supportsNativeSkills: true,
-    defaultProjectPlacementId: "project",
     placements: [
       {
         id: "project",

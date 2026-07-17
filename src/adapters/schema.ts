@@ -67,11 +67,16 @@ export const HarnessConfigSchema = z
       }
     }
 
-    const defaultId = config.defaultProjectPlacementId;
+    const defaultId =
+      config.defaultProjectPlacementId ??
+      (config.adapterStatus === "available" && config.placements.length === 1
+        ? config.placements[0]?.id
+        : undefined);
     if (config.adapterStatus === "available" && defaultId === undefined) {
       context.addIssue({
         code: "custom",
-        message: "is required for an available adapter",
+        message:
+          "is required for an available adapter with multiple placements",
         path: ["defaultProjectPlacementId"],
       });
       return;
@@ -111,7 +116,17 @@ export const HarnessConfigSchema = z
         path: ["defaultProjectPlacementId"],
       });
     }
-  });
+  })
+  .transform((config) =>
+    config.adapterStatus === "available" &&
+    config.defaultProjectPlacementId === undefined &&
+    config.placements.length === 1
+      ? {
+          ...config,
+          defaultProjectPlacementId: config.placements[0]!.id,
+        }
+      : config,
+  );
 
 export const AdapterCatalogEntrySchema = z
   .object({

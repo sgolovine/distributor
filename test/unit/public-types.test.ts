@@ -27,7 +27,6 @@ const customAdapter = {
   displayName: "Example",
   adapterStatus: "available",
   supportsNativeSkills: true,
-  defaultProjectPlacementId: "project",
   placements: [
     {
       id: "project",
