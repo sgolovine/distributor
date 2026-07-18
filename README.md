@@ -1,59 +1,23 @@
-# Distributor
+<div align="center">
+  <h1>Distributor</h1>
+  <p>Synchronize one canonical <a href="https://agentskills.io/">Agent Skills</a> tree across your agent harnesses.</p>
+</div>
 
-Distributor synchronizes one canonical [Agent Skills](https://agentskills.io/)
-tree across sixteen agent harnesses. It creates managed file-level symbolic
-links, detects conflicts before writing, and never executes skill content.
+```sh
+npx @sunnygg/distributor init
+```
 
 ## Getting started
-
-Distributor requires Node.js 22 or newer.
-
-Install [the published package](https://www.npmjs.com/package/@sunnygg/distributor)
-globally:
-
-```sh
-npm install -g @sunnygg/distributor
-```
-
-Then initialize Distributor in your project and sync your skills:
-
-```sh
-distributor init
-distributor sync
-```
-
-To run Distributor without installing it globally, use `npx`:
 
 ```sh
 npx @sunnygg/distributor init
 npx @sunnygg/distributor sync
 ```
 
-`init` prompts you to configure the source directory and target harnesses. Use
-`distributor init --yes` (or `npx @sunnygg/distributor init --yes`) to accept
-the defaults without prompts. After initialization, run `sync` whenever you
-want to synchronize your skills across the configured harnesses.
+`init` creates the Distributor configuration and prompts you to choose a skill
+source and target agent harnesses.
 
-### Basic commands
-
-```sh
-distributor init                    # initialize interactively
-distributor init --yes              # initialize with defaults
-distributor status                  # show skill and reference status
-distributor sync                    # sync every enabled harness
-distributor sync --harness codex    # sync one enabled harness
-distributor sync --dry-run          # preview changes without writing
-distributor remove                  # remove every managed link
-distributor --help                  # show help
-distributor --version               # print the installed version
-```
-
-The examples below use the globally installed `distributor` command. You can
-replace it with `npx @sunnygg/distributor` in any command.
-
-On Windows, enable Developer Mode or otherwise grant permission to create file
-symbolic links before syncing. Distributor does not fall back to copies or
-junctions when symlink creation is unavailable.
+`sync` links the skills from that source into the configured agent harnesses.
 
 ## Add your first skill
 
