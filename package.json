@@ -2,7 +2,7 @@
   "name": "@sunnygg/distributor",
   "description": "Synchronize Agent Skills across supported agent harnesses.",
   "author": "Sunny Golovine",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "license": "MIT",
   "type": "module",
   "engines": {
