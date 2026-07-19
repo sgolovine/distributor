@@ -21,6 +21,7 @@ describe("validateProjectConfig", () => {
     );
 
     expect(config.sourceRoot).toBe(join("/project", ".agents/skills"));
+    expect(config.scope).toBe("project");
     expect(config.harnesses.map((harness) => harness.name)).toEqual([
       "claude-code",
       "codex",
@@ -29,6 +30,17 @@ describe("validateProjectConfig", () => {
     expect(
       config.harnesses.every((harness) => harness.targets === undefined),
     ).toBe(true);
+  });
+
+  it("retains global sync scope", () => {
+    const config = validateProjectConfig(
+      { scope: "global", harnesses: ["opencode"] },
+      discovered,
+      options,
+    );
+
+    expect(config.scope).toBe("global");
+    expect(config.sourceRoot).toBe("/project/.agents/skills");
   });
 
   it("aggregates duplicate and unknown harness problems", () => {

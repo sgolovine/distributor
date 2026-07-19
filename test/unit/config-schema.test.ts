@@ -10,6 +10,7 @@ describe("DistributorConfigSchema", () => {
         harnesses: ["codex", "claude-code", "opencode"],
       }),
     ).toEqual({
+      scope: "project",
       source: ".agents/skills",
       harnesses: ["codex", "claude-code", "opencode"],
     });
@@ -26,8 +27,18 @@ describe("DistributorConfigSchema", () => {
 
   it("applies the runtime source default", () => {
     expect(DistributorConfigSchema.parse({ harnesses: ["codex"] })).toEqual({
+      scope: "project",
       source: ".agents/skills",
       harnesses: ["codex"],
     });
+  });
+
+  it("accepts global automatic placement", () => {
+    expect(
+      DistributorConfigSchema.parse({
+        scope: "global",
+        harnesses: ["opencode"],
+      }).scope,
+    ).toBe("global");
   });
 });

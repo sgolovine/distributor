@@ -19,7 +19,7 @@ import type {
 import { resolvePlacements } from "../../src/sync/resolve-placements.js";
 
 describe("resolvePlacements", () => {
-  it("satisfies compatible automatic placements and maps the fallback", () => {
+  it("uses default project placements and satisfies an equal source", () => {
     const projectRoot = "/project";
     const sourceRoot = "/project/.agents/skills";
     const result = resolvePlacements(
@@ -40,11 +40,6 @@ describe("resolvePlacements", () => {
         placementId: "project",
         sourceRoot,
       },
-      {
-        harnessId: "opencode",
-        placementId: "agents-project",
-        sourceRoot,
-      },
     ]);
     expect(result.placements).toEqual([
       expect.objectContaining({
@@ -52,10 +47,17 @@ describe("resolvePlacements", () => {
         targetRoot: "/project/.claude/skills",
         hasPathOverride: false,
       }),
+      expect.objectContaining({
+        harnessId: "opencode",
+        targetRoot: "/project/.opencode/skills",
+        hasPathOverride: false,
+      }),
     ]);
     expect(result.mappings.map((mapping) => mapping.targetPath)).toEqual([
       "/project/.claude/skills/review/SKILL.md",
       "/project/.claude/skills/review/references/a.md",
+      "/project/.opencode/skills/review/SKILL.md",
+      "/project/.opencode/skills/review/references/a.md",
     ]);
     expect(result.mappings[0]?.linkValue).toBe(
       "../../../.agents/skills/review/SKILL.md",
@@ -67,7 +69,7 @@ describe("resolvePlacements", () => {
     });
   });
 
-  it("recognizes every declared compatible project placement", () => {
+  it("does not substitute compatible project paths for the default", () => {
     const sourceRoot = "/project/.claude/skills";
     const result = resolvePlacements(
       projectConfig("/project", sourceRoot, [automatic("opencode")]),
@@ -75,14 +77,70 @@ describe("resolvePlacements", () => {
       { pathStyle: "posix" },
     );
 
-    expect(result.satisfiedPlacements).toEqual([
+    expect(result.satisfiedPlacements).toEqual([]);
+    expect(result.placements).toEqual([
+      expect.objectContaining({
+        harnessId: "opencode",
+        targetRoot: "/project/.opencode/skills",
+      }),
+    ]);
+    expect(result.mappings[0]?.targetPath).toBe(
+      "/project/.opencode/skills/review/SKILL.md",
+    );
+  });
+
+  it("uses shared agents and native harness directories for global scope", () => {
+    const projectRoot = "/project";
+    const sourceRoot = "/project/.agents/skills";
+    const config = projectConfig(projectRoot, sourceRoot, [
+      automatic("opencode"),
+      automatic("codex"),
+      automatic("claude-code"),
+    ]);
+    const result = resolvePlacements(
+      { ...config, scope: "global" },
+      discovery(sourceRoot, [skill(sourceRoot, "review")]),
+      { pathStyle: "posix", homeDirectory: "/home/dev" },
+    );
+
+    expect(
+      result.placements.map((placement) => ({
+        harnessId: placement.harnessId,
+        placementId: placement.placement.id,
+        targetRoot: placement.targetRoot,
+      })),
+    ).toEqual([
+      {
+        harnessId: "claude-code",
+        placementId: "user",
+        targetRoot: "/home/dev/.claude/skills",
+      },
+      {
+        harnessId: "codex",
+        placementId: "user",
+        targetRoot: "/home/dev/.agents/skills",
+      },
       {
         harnessId: "opencode",
-        placementId: "claude-project",
-        sourceRoot,
+        placementId: "agents-user",
+        targetRoot: "/home/dev/.agents/skills",
       },
     ]);
-    expect(result.mappings).toEqual([]);
+    expect(result.mappings).toHaveLength(2);
+    expect(result.mappings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetPath: "/home/dev/.agents/skills/review/SKILL.md",
+          attributions: [
+            { harnessId: "codex", placementId: "user" },
+            { harnessId: "opencode", placementId: "agents-user" },
+          ],
+        }),
+        expect.objectContaining({
+          targetPath: "/home/dev/.claude/skills/review/SKILL.md",
+        }),
+      ]),
+    );
   });
 
   it("sorts full sync mappings independently of config and skill order", () => {
@@ -432,6 +490,7 @@ function projectConfig(
   return {
     configPath: `${projectRoot}${separator}distributor.config.json`,
     projectRoot,
+    scope: "project",
     sourceRoot,
     harnesses,
   };

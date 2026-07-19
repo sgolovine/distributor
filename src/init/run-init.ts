@@ -1,4 +1,4 @@
-import { isCancel, multiselect, text } from "@clack/prompts";
+import { isCancel, multiselect, select, text } from "@clack/prompts";
 import type { Stats } from "node:fs";
 import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -13,7 +13,11 @@ import {
   validateProjectConfig,
   type ValidateConfigOptions,
 } from "../config/validate.js";
-import { DEFAULT_SOURCE_PATH } from "../config/schema.js";
+import {
+  DEFAULT_SOURCE_PATH,
+  DEFAULT_SYNC_SCOPE,
+  type SyncScope,
+} from "../config/schema.js";
 import { DistributorError } from "../errors.js";
 import {
   isStrictChildPath,
@@ -27,11 +31,13 @@ const STATE_IGNORE_CONTENTS =
   "*\n!.gitignore\n!adapters/\n!adapters/**\n";
 
 export interface InitSelections {
+  readonly scope: SyncScope;
   readonly source: string;
   readonly harnesses: readonly string[];
 }
 
 export interface InitPromptContext {
+  readonly defaultScope: SyncScope;
   readonly defaultSource: string;
   readonly defaultHarnesses: readonly string[];
   readonly harnesses: readonly {
@@ -94,6 +100,26 @@ function cancelledPrompt(): DistributorError {
 export async function promptForInitSelections(
   context: InitPromptContext,
 ): Promise<InitSelections> {
+  const scope = await select<SyncScope>({
+    message: "Where should Distributor sync these skills?",
+    options: [
+      {
+        value: "project",
+        label: "Project",
+        hint: "link skills inside this project",
+      },
+      {
+        value: "global",
+        label: "Global",
+        hint: "link project skills into your home directory",
+      },
+    ],
+    initialValue: context.defaultScope,
+  });
+  if (isCancel(scope)) {
+    throw cancelledPrompt();
+  }
+
   const source = await text({
     message: "Where are your Agent Skills stored?",
     initialValue: context.defaultSource,
@@ -120,7 +146,7 @@ export async function promptForInitSelections(
     throw cancelledPrompt();
   }
 
-  return { source, harnesses };
+  return { scope, source, harnesses };
 }
 
 function serializeConfig(selections: InitSelections): string {
@@ -128,6 +154,7 @@ function serializeConfig(selections: InitSelections): string {
 
   return [
     "{",
+    `  "scope": ${JSON.stringify(selections.scope)},`,
     `  "source": ${JSON.stringify(selections.source)},`,
     `  "harnesses": [${harnesses.join(", ")}]`,
     "}",
@@ -260,16 +287,22 @@ async function buildInitPlan(options: RunInitOptions): Promise<InitPlan> {
       );
     }
 
-    const selections =
+    const selections: InitSelections =
       options.yes === true
-        ? { source: DEFAULT_SOURCE_PATH, harnesses: defaultHarnesses }
+        ? {
+            scope: DEFAULT_SYNC_SCOPE,
+            source: DEFAULT_SOURCE_PATH,
+            harnesses: defaultHarnesses,
+          }
         : await (options.prompt ?? promptForInitSelections)({
+            defaultScope: DEFAULT_SYNC_SCOPE,
             defaultSource: DEFAULT_SOURCE_PATH,
             defaultHarnesses,
             harnesses: availableHarnessChoices,
           });
     const config = validateProjectConfig(
       {
+        scope: selections.scope,
         source: selections.source,
         harnesses: [...selections.harnesses],
       },

@@ -27,6 +27,7 @@ const ALL_HARNESSES = [
 ] as const;
 
 const DEFAULT_CONFIG_CONTENTS = `{
+  "scope": "project",
   "source": ".agents/skills",
   "harnesses": [${ALL_HARNESSES.map((name) => JSON.stringify(name)).join(", ")}]
 }
@@ -228,6 +229,7 @@ describe("runInit selection collection", () => {
     await useFixture(async (root) => {
       const prompt = vi.fn<InitPrompt>(async (context) => {
         expect(context).toEqual({
+          defaultScope: "project",
           defaultSource: ".agents/skills",
           defaultHarnesses: ALL_HARNESSES,
           harnesses: ALL_HARNESSES.map((name) => ({
@@ -253,6 +255,7 @@ describe("runInit selection collection", () => {
           })),
         });
         return {
+          scope: "global",
           source: "team-skills",
           harnesses: ["claude-code", "codex"],
         };
@@ -266,6 +269,7 @@ describe("runInit selection collection", () => {
 
       expect(prompt).toHaveBeenCalledOnce();
       expect(await readFile(result.configPath, "utf8")).toBe(`{
+  "scope": "global",
   "source": "team-skills",
   "harnesses": ["claude-code", "codex"]
 }
@@ -382,6 +386,7 @@ describe("runInit preflight and non-destructive apply", () => {
   it("rejects a selected source that collides with generated config", async () => {
     await useFixture(async (root) => {
       const prompt: InitPrompt = async () => ({
+        scope: "project",
         source: "distributor.config.json",
         harnesses: ["codex"],
       });

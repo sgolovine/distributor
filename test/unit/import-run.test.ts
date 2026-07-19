@@ -74,6 +74,7 @@ describe("runImport", () => {
     await useFixture(async (root) => {
       await writeSkill(join(root, ".claude", "skills"), "alpha");
       const initPrompt = vi.fn<InitPrompt>(async () => ({
+        scope: "project",
         source: "team-skills",
         harnesses: ["claude-code"],
       }));

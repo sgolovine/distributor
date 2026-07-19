@@ -54,6 +54,7 @@ const ALL_HARNESSES = [
 ] as const;
 
 const DEFAULT_CONFIG = `{
+  "scope": "project",
   "source": ".agents/skills",
   "harnesses": [${ALL_HARNESSES.map((name) => JSON.stringify(name)).join(", ")}]
 }
@@ -75,6 +76,7 @@ const publicTypeMatchesSchema: Equal<
 > = true;
 
 const documentedConfig = {
+  scope: "project",
   source: ".agents/skills",
   harnesses: [...ALL_HARNESSES],
 } satisfies DistributorConfig;
@@ -179,7 +181,7 @@ describe("Distributor initial-release acceptance matrix", () => {
     });
   });
 
-  it("criterion 4: Codex and OpenCode are satisfied in place without fallback directories", async () => {
+  it("criterion 4: project scope satisfies Codex and links OpenCode into its project directory", async () => {
     await useFixture(async (root) => {
       await runInit({ cwd: root, yes: true });
       await writeSkill(root, "review");
@@ -193,11 +195,6 @@ describe("Distributor initial-release acceptance matrix", () => {
             placementId: "project",
             sourceRoot: join(root, ".agents", "skills"),
           },
-          {
-            harnessId: "opencode",
-            placementId: "agents-project",
-            sourceRoot: join(root, ".agents", "skills"),
-          },
         ]),
       );
       expect(
@@ -208,9 +205,68 @@ describe("Distributor initial-release acceptance matrix", () => {
         result.counts.harnesses.find(
           (harness) => harness.harnessId === "opencode",
         )?.operations.total,
-      ).toBe(0);
-      expect(await exists(join(root, ".opencode"))).toBe(false);
+      ).toBe(1);
+      expect(
+        (
+          await lstat(
+            join(root, ".opencode", "skills", "review", "SKILL.md"),
+          )
+        ).isSymbolicLink(),
+      ).toBe(true);
       expect(await exists(join(root, ".codex"))).toBe(false);
+    });
+  });
+
+  it("syncs project-owned skills into shared and harness-specific global directories", async () => {
+    await useFixture(async (root) => {
+      const projectRoot = join(root, "project");
+      const homeDirectory = join(root, "home");
+      await mkdir(projectRoot);
+      await runInit({
+        cwd: projectRoot,
+        isInteractive: true,
+        prompt: async () => ({
+          scope: "global",
+          source: ".agents/skills",
+          harnesses: ["codex", "opencode", "claude-code"],
+        }),
+      });
+      await writeSkill(projectRoot, "review");
+
+      const result = await runSync({ cwd: projectRoot, homeDirectory });
+      const source = join(
+        projectRoot,
+        ".agents",
+        "skills",
+        "review",
+        "SKILL.md",
+      );
+      const agentsTarget = join(
+        homeDirectory,
+        ".agents",
+        "skills",
+        "review",
+        "SKILL.md",
+      );
+      const claudeTarget = join(
+        homeDirectory,
+        ".claude",
+        "skills",
+        "review",
+        "SKILL.md",
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect((await lstat(agentsTarget)).isSymbolicLink()).toBe(true);
+      expect((await lstat(claudeTarget)).isSymbolicLink()).toBe(true);
+      expect(await readlink(agentsTarget)).toBe(source);
+      expect(await readlink(claudeTarget)).toBe(source);
+      expect(result.counts.physicalOperations.total).toBe(2);
+      expect(
+        result.counts.harnesses.find(
+          (harness) => harness.harnessId === "opencode",
+        )?.placements[0]?.placementId,
+      ).toBe("agents-user");
     });
   });
 
@@ -240,7 +296,7 @@ describe("Distributor initial-release acceptance matrix", () => {
         create: 0,
         update: 0,
         adopt: 0,
-        skip: 8,
+        skip: 24,
       });
       expect(third.counts).toEqual(second.counts);
       expect(renderSync(third)).toBe(renderSync(second));

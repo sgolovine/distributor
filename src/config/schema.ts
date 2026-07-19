@@ -1,6 +1,9 @@
 import { z } from "zod";
 
 export const DEFAULT_SOURCE_PATH = ".agents/skills";
+export const DEFAULT_SYNC_SCOPE = "project";
+
+export const SyncScopeSchema = z.enum(["project", "global"]);
 
 export const TargetSelectionSchema = z
   .object({
@@ -21,6 +24,7 @@ export const HarnessSelectionSchema = z.union([
 
 export const DistributorConfigSchema = z
   .object({
+    scope: SyncScopeSchema.default(DEFAULT_SYNC_SCOPE),
     source: z.string().min(1).default(DEFAULT_SOURCE_PATH),
     harnesses: z.array(HarnessSelectionSchema).min(1),
   })
@@ -28,5 +32,6 @@ export const DistributorConfigSchema = z
 
 export type DistributorConfig = z.input<typeof DistributorConfigSchema>;
 export type ParsedDistributorConfig = z.output<typeof DistributorConfigSchema>;
+export type SyncScope = z.infer<typeof SyncScopeSchema>;
 export type HarnessSelection = z.infer<typeof HarnessSelectionSchema>;
 export type TargetSelection = z.infer<typeof TargetSelectionSchema>;

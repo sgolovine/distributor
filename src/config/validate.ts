@@ -24,6 +24,7 @@ import { loadSelectedConfig } from "./load.js";
 import {
   DistributorConfigSchema,
   type ParsedDistributorConfig,
+  type SyncScope,
   type TargetSelection,
 } from "./schema.js";
 
@@ -41,6 +42,7 @@ export interface ValidatedHarnessSelection {
 export interface ValidatedProjectConfig {
   readonly configPath: string;
   readonly projectRoot: string;
+  readonly scope: SyncScope;
   readonly sourceRoot: string;
   readonly harnesses: readonly ValidatedHarnessSelection[];
   readonly adapterRegistry?: AdapterRegistry;
@@ -348,6 +350,7 @@ export function validateProjectConfig(
   return {
     configPath: discovered.configPath,
     projectRoot: discovered.projectRoot,
+    scope: parsed.scope,
     sourceRoot,
     harnesses: harnesses.sort((left, right) => left.name.localeCompare(right.name)),
     adapterRegistry,

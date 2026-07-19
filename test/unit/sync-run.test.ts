@@ -384,6 +384,7 @@ function orchestrationFixture(): OrchestrationFixture {
     config: {
       configPath: "/project/distributor.config.json",
       projectRoot: "/project",
+      scope: "project",
       sourceRoot,
       harnesses: [
         { name: "claude-code", targets: undefined },

@@ -106,41 +106,59 @@ export function resolvePlacements(
     }
 
     if (harness.targets === undefined) {
+      const automaticScope = config.scope === "global" ? "user" : "project";
       const compatible = adapter.placements
         .filter(
           (placement) =>
-            placement.scope === "project" &&
+            placement.scope === automaticScope &&
             (placement.support === "native" ||
               placement.support === "compatibility"),
         )
         .sort((left, right) => compareText(left.id, right.id));
-      const satisfied = compatible.find((placement) =>
+      const defaultPlacement =
+        config.scope === "global"
+          ? preferredGlobalPlacement(
+              compatible,
+              projectRoot,
+              style,
+              options.homeDirectory,
+            )
+          : adapter.placements.find(
+              (placement) => placement.id === adapter.defaultProjectPlacementId,
+            );
+      if (defaultPlacement === undefined) {
+        throw new DistributorError(
+          "config",
+          `Harness ${JSON.stringify(harness.name)} does not declare a supported ${automaticScope} skill placement.`,
+          {
+            operation: "resolve placements",
+            context: { harnessId: harness.name, scope: config.scope },
+            correction:
+              config.scope === "global"
+                ? "Choose a harness with global skill support or configure an explicit user target."
+                : "Choose a harness with project skill support or configure an explicit project target.",
+          },
+        );
+      }
+
+      if (
         pathsAreEquivalent(
           sourceRoot,
           resolveAdapterPath(
-            placement.defaultPath,
+            defaultPlacement.defaultPath,
             projectRoot,
             style,
             options.homeDirectory,
           ),
           style,
-        ),
-      );
-
-      if (satisfied !== undefined) {
+        )
+      ) {
         satisfiedPlacements.push({
           harnessId: harness.name,
-          placementId: satisfied.id,
+          placementId: defaultPlacement.id,
           sourceRoot,
         });
         continue;
-      }
-
-      const defaultPlacement = adapter.placements.find(
-        (placement) => placement.id === adapter.defaultProjectPlacementId,
-      );
-      if (defaultPlacement === undefined) {
-        throw new Error(`Default placement metadata is missing for ${harness.name}.`);
       }
 
       addPlacement(
@@ -202,6 +220,34 @@ export function resolvePlacements(
     satisfiedPlacements,
     warnings,
   };
+}
+
+function preferredGlobalPlacement(
+  compatible: readonly HarnessPlacement[],
+  projectRoot: string,
+  style: PathStyle,
+  homeDirectory: string | undefined,
+): HarnessPlacement | undefined {
+  const sharedAgentsRoot = resolveAdapterPath(
+    "~/.agents/skills",
+    projectRoot,
+    style,
+    homeDirectory,
+  );
+  return (
+    compatible.find((placement) =>
+      pathsAreEquivalent(
+        resolveAdapterPath(
+          placement.defaultPath,
+          projectRoot,
+          style,
+          homeDirectory,
+        ),
+        sharedAgentsRoot,
+        style,
+      ),
+    ) ?? compatible.find((placement) => placement.support === "native")
+  );
 }
 
 function selectHarnesses(
