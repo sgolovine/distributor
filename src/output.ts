@@ -2,6 +2,7 @@ import picocolors from "picocolors";
 
 import { DistributorError } from "./errors.js";
 import { displayPath } from "./filesystem/paths.js";
+import type { RunImportResult } from "./import/run-import.js";
 import type { InitResult } from "./init/run-init.js";
 import type { RunRemoveResult } from "./remove/run-remove.js";
 import type { RunStatusResult } from "./status/run-status.js";
@@ -24,6 +25,7 @@ export interface CliOutput {
   writeOut(text: string): void;
   writeErr(text: string): void;
   printError(error: unknown): void;
+  printImport(result: RunImportResult): void;
   printInit(result: InitResult): void;
   printRemove(result: RunRemoveResult): void;
   printStatus(result: RunStatusResult): void;
@@ -95,6 +97,47 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       writeOut(`Initialized Distributor at ${result.projectRoot}.\n`);
       for (const outcome of result.outcomes) {
         writeOut(`${outcome.artifact}: ${outcome.status} ${outcome.path}\n`);
+      }
+    },
+    printImport(result) {
+      if (result.initialized !== undefined) {
+        if (result.initialized.noOp) {
+          writeOut(
+            `Distributor is already initialized at ${result.initialized.projectRoot}.\n`,
+          );
+        } else {
+          writeOut(`Initialized Distributor at ${result.initialized.projectRoot}.\n`);
+          for (const outcome of result.initialized.outcomes) {
+            writeOut(`${outcome.artifact}: ${outcome.status} ${outcome.path}\n`);
+          }
+        }
+      }
+      for (const warning of result.warnings) {
+        writeOut(
+          colors.yellow(
+            `Warning: ${formatDiagnosticPath(warning.path, result.projectRoot)}: ${warning.message}\n`,
+          ),
+        );
+      }
+      if (result.candidates.length === 0) {
+        writeOut("No importable skills found in supported harness directories.\n");
+        return;
+      }
+      if (result.declined) {
+        writeOut("Skill import skipped.\n");
+        return;
+      }
+      if (result.imported.length === 0) {
+        writeOut("No skills selected for import.\n");
+        return;
+      }
+      writeOut(
+        `Imported ${result.imported.length} skill${result.imported.length === 1 ? "" : "s"} into ${result.sourceRoot}.\n`,
+      );
+      for (const imported of result.imported) {
+        writeOut(
+          `${imported.name}: ${formatDiagnosticPath(imported.sourcePath, result.projectRoot)} -> ${formatDiagnosticPath(imported.destinationPath, result.projectRoot)}\n`,
+        );
       }
     },
     printRemove(result) {
