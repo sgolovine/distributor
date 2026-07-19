@@ -7,6 +7,7 @@ import {
 
 import type { ExitCode } from "./errors.js";
 import { DistributorError } from "./errors.js";
+import { runImport } from "./import/run-import.js";
 import { runInit } from "./init/run-init.js";
 import { type CliOutput, createOutput } from "./output.js";
 import { runRemove } from "./remove/run-remove.js";
@@ -14,6 +15,7 @@ import { runStatus } from "./status/run-status.js";
 import { runSync } from "./sync/run-sync.js";
 
 export interface CliRuntime {
+  readonly runImport: typeof runImport;
   readonly runInit: typeof runInit;
   readonly runRemove: typeof runRemove;
   readonly runStatus: typeof runStatus;
@@ -32,7 +34,13 @@ export interface RunCliOptions extends CliProgramOptions {
   readonly version: string;
 }
 
-const defaultRuntime: CliRuntime = { runInit, runRemove, runStatus, runSync };
+const defaultRuntime: CliRuntime = {
+  runImport,
+  runInit,
+  runRemove,
+  runStatus,
+  runSync,
+};
 
 export function createProgram(
   version: string,
@@ -74,14 +82,38 @@ export function createProgram(
     .description("Initialize Distributor without syncing.")
     .option("-y, --yes", "Accept the displayed defaults without prompting.")
     .action(async (commandOptions: { readonly yes?: boolean }) => {
+      const isInteractive =
+        options.isInteractive ?? process.stdin.isTTY === true;
       const result = await runtime.runInit({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         yes: commandOptions.yes === true,
+        isInteractive,
+      });
+      output.printInit(result);
+
+      if (commandOptions.yes !== true && isInteractive) {
+        const importResult = await runtime.runImport({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          isInteractive,
+          projectRoot: result.projectRoot,
+          sourceRoot: result.sourceRoot,
+          offer: true,
+        });
+        output.printImport(importResult);
+      }
+    });
+
+  program
+    .command("import")
+    .description("Import existing skills from supported harnesses.")
+    .action(async () => {
+      const result = await runtime.runImport({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         ...(options.isInteractive === undefined
           ? {}
           : { isInteractive: options.isInteractive }),
       });
-      output.printInit(result);
+      output.printImport(result);
     });
 
   program
@@ -142,12 +174,14 @@ export function createProgram(
     `
 Command flags:
   distributor init [-y|--yes]
+  distributor import
   distributor remove
   distributor status
   distributor sync [--harness <harness-id>] [--dry-run]
 
 Examples:
   distributor init --yes
+  distributor import
   distributor status
   distributor sync
   distributor sync --harness claude-code

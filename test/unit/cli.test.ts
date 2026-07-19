@@ -5,6 +5,7 @@ import {
   runCli,
 } from "../../src/cli.js";
 import { DistributorError } from "../../src/errors.js";
+import type { RunImportResult } from "../../src/import/run-import.js";
 import type { InitResult } from "../../src/init/run-init.js";
 import { createOutput } from "../../src/output.js";
 import type { RunRemoveResult } from "../../src/remove/run-remove.js";
@@ -85,6 +86,37 @@ describe("Distributor CLI", () => {
       expect(context.stdout()).toContain("config: created");
     },
   );
+
+  it("runs import and renders copied skills", async () => {
+    const context = testContext();
+
+    expect(await context.run(["import"])).toBe(0);
+
+    expect(context.runImport).toHaveBeenCalledWith({
+      cwd: "/workspace",
+      isInteractive: false,
+    });
+    expect(context.stdout()).toContain(
+      "Imported 1 skill into /project/.agents/skills.",
+    );
+    expect(context.stdout()).toContain(
+      "alpha: .claude/skills/alpha -> .agents/skills/alpha",
+    );
+  });
+
+  it("offers import after interactive init", async () => {
+    const context = testContext({ isInteractive: true });
+
+    expect(await context.run(["init"])).toBe(0);
+
+    expect(context.runImport).toHaveBeenCalledWith({
+      cwd: "/workspace",
+      isInteractive: true,
+      projectRoot: "/project",
+      sourceRoot: "/project/.agents/skills",
+      offer: true,
+    });
+  });
 
   it("passes sync flags and renders deterministic dry-run summaries", async () => {
     const context = testContext();
@@ -242,10 +274,13 @@ describe("Distributor CLI", () => {
   });
 });
 
-function testContext(runtime: Partial<CliRuntime> = {}): {
+function testContext(
+  runtime: Partial<CliRuntime> & { readonly isInteractive?: boolean } = {},
+): {
   readonly run: (args: readonly string[]) => Promise<0 | 1 | 2>;
   readonly stdout: () => string;
   readonly stderr: () => string;
+  readonly runImport: ReturnType<typeof vi.fn>;
   readonly runInit: ReturnType<typeof vi.fn>;
   readonly runRemove: ReturnType<typeof vi.fn>;
   readonly runStatus: ReturnType<typeof vi.fn>;
@@ -253,6 +288,9 @@ function testContext(runtime: Partial<CliRuntime> = {}): {
 } {
   let stdout = "";
   let stderr = "";
+  const runImport = vi.fn(
+    runtime.runImport ?? (async () => importResult()),
+  );
   const runInit = vi.fn(
     runtime.runInit ?? (async () => initResult()),
   );
@@ -280,16 +318,43 @@ function testContext(runtime: Partial<CliRuntime> = {}): {
       runCli(args, {
         version: VERSION,
         cwd: "/workspace",
-        isInteractive: false,
+        isInteractive: runtime.isInteractive ?? false,
         output,
-        runtime: { runInit, runRemove, runStatus, runSync },
+        runtime: { runImport, runInit, runRemove, runStatus, runSync },
       }),
     stdout: () => stdout,
     stderr: () => stderr,
+    runImport,
     runInit,
     runRemove,
     runStatus,
     runSync,
+  };
+}
+
+function importResult(): RunImportResult {
+  return {
+    projectRoot: "/project",
+    sourceRoot: "/project/.agents/skills",
+    candidates: [
+      {
+        id: "/project/.claude/skills/alpha",
+        name: "alpha",
+        description: "alpha skill",
+        sourceRoot: "/project/.claude/skills",
+        sourcePath: "/project/.claude/skills/alpha",
+        harnesses: ["claude-code"],
+      },
+    ],
+    imported: [
+      {
+        name: "alpha",
+        sourcePath: "/project/.claude/skills/alpha",
+        destinationPath: "/project/.agents/skills/alpha",
+      },
+    ],
+    warnings: [],
+    declined: false,
   };
 }
 

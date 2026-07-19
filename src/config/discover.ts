@@ -89,9 +89,9 @@ export async function findGitWorktreeRoot(
   }
 }
 
-export async function discoverConfig(
+export async function discoverConfigIfPresent(
   startDirectory: string,
-): Promise<DiscoveredConfig> {
+): Promise<DiscoveredConfig | undefined> {
   const start = resolve(startDirectory);
   const worktreeRoot = await findGitWorktreeRoot(start);
   const boundary = worktreeRoot ?? parse(start).root;
@@ -106,7 +106,8 @@ export async function discoverConfig(
         {
           operation: "discover config",
           context: { directory: current, files: matches.join(", ") },
-          correction: "Keep exactly one supported Distributor config in this directory.",
+          correction:
+            "Keep exactly one supported Distributor config in this directory.",
         },
       );
     }
@@ -125,6 +126,21 @@ export async function discoverConfig(
     }
     current = dirname(current);
   }
+
+  return undefined;
+}
+
+export async function discoverConfig(
+  startDirectory: string,
+): Promise<DiscoveredConfig> {
+  const start = resolve(startDirectory);
+  const discovered = await discoverConfigIfPresent(start);
+  if (discovered !== undefined) {
+    return discovered;
+  }
+
+  const worktreeRoot = await findGitWorktreeRoot(start);
+  const boundary = worktreeRoot ?? parse(start).root;
 
   throw new DistributorError(
     "config",

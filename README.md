@@ -11,11 +11,18 @@ npx @sunnygg/distributor init
 
 ```sh
 npx @sunnygg/distributor init
+npx @sunnygg/distributor import
 npx @sunnygg/distributor sync
 ```
 
 `init` creates the Distributor configuration and prompts you to choose a skill
-source and target agent harnesses.
+source and target agent harnesses. It also scans supported harness directories
+and offers to import any existing skills it finds.
+
+`import` scans every native and compatible skill directory declared by the
+available harness adapters. You can select which discovered skills to copy into
+the configured source. Existing source skills are preserved. If Distributor
+has not been initialized, `import` runs interactive initialization first.
 
 `sync` links the skills from that source into the configured agent harnesses.
 
@@ -62,6 +69,7 @@ distributor version                 # print the installed version
 distributor init                    # interactive initialization
 distributor init --yes              # initialize with defaults
 distributor init -y                 # same as --yes
+distributor import                  # import skills from harness directories
 distributor status                  # show skill and reference status
 distributor sync                    # sync every enabled harness
 distributor sync --harness codex    # sync one enabled harness

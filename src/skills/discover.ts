@@ -6,8 +6,8 @@ import { isMap, isScalar, parseDocument } from "yaml";
 
 import { DistributorError } from "../errors.js";
 import {
-  SkillFrontmatterSchema,
   type SkillFrontmatter,
+  SkillFrontmatterSchema,
 } from "./schema.js";
 
 export interface SourceSkillFile {
@@ -150,6 +150,59 @@ export async function discoverSkills(
   await requireSourceRootIdentity(sourceRoot, sourceRootIdentity);
 
   return { sourceRoot, sourceRootIdentity, skills, warnings };
+}
+
+export async function discoverSkill(
+  sourcePath: string,
+  directoryName: string,
+): Promise<SourceSkill> {
+  const sourceRoot = resolve(sourcePath);
+  const rootStats = await inspectSourceRoot(sourceRoot);
+  if (!rootStats.isDirectory()) {
+    throw new SkillValidationError([
+      {
+        path: sourceRoot,
+        message: `The source root must be a directory; found ${describeNode(rootStats)}.`,
+      },
+    ]);
+  }
+  const sourceRootIdentity = await captureSourceRootIdentity(
+    sourceRoot,
+    rootStats,
+  );
+  const skillPath = join(sourceRoot, directoryName);
+  const problems: SkillValidationProblem[] = [];
+  const stats = await inspectEntry(skillPath, problems, skillPath);
+  let skill: SourceSkill | undefined;
+
+  if (stats !== undefined && !stats.isDirectory()) {
+    problems.push({
+      path: skillPath,
+      skillPath,
+      message: `A skill must be a directory; found ${describeNode(stats)}.`,
+    });
+  } else if (stats !== undefined) {
+    skill = await inspectSkill(
+      sourceRoot,
+      skillPath,
+      directoryName,
+      problems,
+    );
+  }
+
+  if (problems.length > 0 || skill === undefined) {
+    if (problems.length === 0) {
+      problems.push({
+        path: skillPath,
+        skillPath,
+        message: "Unable to discover the skill directory.",
+      });
+    }
+    throw new SkillValidationError(problems);
+  }
+
+  await requireSourceRootIdentity(sourceRoot, sourceRootIdentity);
+  return skill;
 }
 
 async function inspectSourceRoot(sourceRoot: string): Promise<Stats> {
