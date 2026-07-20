@@ -31,20 +31,28 @@ describe("discoverSkills", () => {
           inode: stats.ino,
         },
         skills: [],
+        helperFiles: [],
         warnings: [],
       });
     });
   });
 
-  it("discovers deterministic file lists and ignores hidden root entries", async () => {
+  it("discovers deterministic skill and helper file lists and ignores hidden root entries", async () => {
     await useFixture(async (root) => {
       await mkdir(join(root, "zeta", "references"), { recursive: true });
       await mkdir(join(root, "zeta", "empty"));
+      await mkdir(join(root, "_bqe-core-reference", "nested"), {
+        recursive: true,
+      });
       await mkdir(join(root, "alpha"));
       await mkdir(join(root, ".ignored"));
       await writeFile(join(root, ".ignored", "SKILL.md"), "not frontmatter");
       await symlink("missing", join(root, ".hidden-link"), "file");
       await writeFile(join(root, "notes.txt"), "ignored");
+      await writeFile(
+        join(root, "_bqe-core-reference", "nested", "schema.json"),
+        "{}",
+      );
       await writeSkill(root, "zeta", {
         extra: "preserved",
       });
@@ -68,12 +76,28 @@ describe("discoverSkills", () => {
         join("zeta", "references", "b.md"),
       ]);
       expect(result.skills[1]?.frontmatter.extra).toBe("preserved");
-      expect(result.warnings).toEqual([
-        expect.objectContaining({
-          code: "ignored-source-root-file",
-          path: join(root, "notes.txt"),
-        }),
+      expect(result.helperFiles).toEqual([
+        {
+          absolutePath: join(
+            root,
+            "_bqe-core-reference",
+            "nested",
+            "schema.json",
+          ),
+          sourceRelativePath: join(
+            "_bqe-core-reference",
+            "nested",
+            "schema.json",
+          ),
+          helperName: "_bqe-core-reference",
+        },
+        {
+          absolutePath: join(root, "notes.txt"),
+          sourceRelativePath: "notes.txt",
+          helperName: "notes.txt",
+        },
       ]);
+      expect(result.warnings).toEqual([]);
     });
   });
 
@@ -118,9 +142,7 @@ describe("discoverSkills", () => {
           }),
         ]),
       );
-      expect(error.warnings).toEqual([
-        expect.objectContaining({ path: join(root, "ignored.txt") }),
-      ]);
+      expect(error.warnings).toEqual([]);
     });
   });
 
@@ -150,11 +172,27 @@ describe("discoverSkills", () => {
     });
   });
 
-  it("requires exact SKILL.md casing and a YAML mapping", async () => {
+  it("treats directories without exact SKILL.md casing as helpers", async () => {
     await useFixture(async (root) => {
       await mkdir(join(root, "lowercase"));
-      await mkdir(join(root, "sequence"));
       await writeFile(join(root, "lowercase", "skill.md"), "ignored asset");
+
+      const result = await discoverSkills(root);
+
+      expect(result.helperFiles).toEqual([
+        {
+          absolutePath: join(root, "lowercase", "skill.md"),
+          sourceRelativePath: join("lowercase", "skill.md"),
+          helperName: "lowercase",
+        },
+      ]);
+      expect(result.skills).toEqual([]);
+    });
+  });
+
+  it("still validates directories containing SKILL.md as skills", async () => {
+    await useFixture(async (root) => {
+      await mkdir(join(root, "sequence"));
       await writeFile(
         join(root, "sequence", "SKILL.md"),
         "---\n- name: sequence\n- description: invalid\n---\n",
@@ -162,18 +200,12 @@ describe("discoverSkills", () => {
 
       const error = await validationError(discoverSkills(root));
 
-      expect(error.problems).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path: join(root, "lowercase", "SKILL.md"),
-            message: expect.stringContaining("named exactly SKILL.md"),
-          }),
-          expect.objectContaining({
-            path: join(root, "sequence", "SKILL.md"),
-            message: expect.stringContaining("YAML mapping"),
-          }),
-        ]),
-      );
+      expect(error.problems).toEqual([
+        expect.objectContaining({
+          path: join(root, "sequence", "SKILL.md"),
+          message: expect.stringContaining("YAML mapping"),
+        }),
+      ]);
     });
   });
 

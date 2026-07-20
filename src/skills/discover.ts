@@ -16,6 +16,12 @@ export interface SourceSkillFile {
   skillRelativePath: string;
 }
 
+export interface SourceHelperFile {
+  absolutePath: string;
+  sourceRelativePath: string;
+  helperName: string;
+}
+
 export interface SourceSkill {
   name: string;
   directoryPath: string;
@@ -46,6 +52,7 @@ export interface SkillDiscoveryResult {
   sourceRoot: string;
   sourceRootIdentity: SourceRootIdentity;
   skills: SourceSkill[];
+  helperFiles: SourceHelperFile[];
   warnings: SkillDiscoveryWarning[];
 }
 
@@ -106,6 +113,7 @@ export async function discoverSkills(
   const problems: SkillValidationProblem[] = [];
   const warnings: SkillDiscoveryWarning[] = [];
   const skills: SourceSkill[] = [];
+  const helperFiles: SourceHelperFile[] = [];
   const rootEntries = await readDirectory(sourceRoot, problems);
 
   for (const name of rootEntries) {
@@ -120,18 +128,29 @@ export async function discoverSkills(
     }
 
     if (stats.isDirectory()) {
-      const skill = await inspectSkill(sourceRoot, entryPath, name, problems);
-      if (skill !== undefined) {
-        skills.push(skill);
+      const entries = await readDirectory(entryPath, problems, entryPath);
+      if (entries.includes("SKILL.md")) {
+        const skill = await inspectSkill(sourceRoot, entryPath, name, problems);
+        if (skill !== undefined) {
+          skills.push(skill);
+        }
+      } else {
+        await collectHelperFiles(
+          sourceRoot,
+          entryPath,
+          name,
+          helperFiles,
+          problems,
+        );
       }
       continue;
     }
 
     if (stats.isFile()) {
-      warnings.push({
-        code: "ignored-source-root-file",
-        path: entryPath,
-        message: "Regular files directly under the source root are ignored.",
+      helperFiles.push({
+        absolutePath: entryPath,
+        sourceRelativePath: relative(sourceRoot, entryPath),
+        helperName: name,
       });
       continue;
     }
@@ -139,7 +158,7 @@ export async function discoverSkills(
     problems.push({
       path: entryPath,
       skillPath: entryPath,
-      message: `Source root entries must be skill directories; found ${describeNode(stats)}.`,
+      message: `Source root entries must be regular files or directories; found ${describeNode(stats)}.`,
     });
   }
 
@@ -148,8 +167,11 @@ export async function discoverSkills(
   }
 
   await requireSourceRootIdentity(sourceRoot, sourceRootIdentity);
+  helperFiles.sort((left, right) =>
+    compareText(left.sourceRelativePath, right.sourceRelativePath),
+  );
 
-  return { sourceRoot, sourceRootIdentity, skills, warnings };
+  return { sourceRoot, sourceRootIdentity, skills, helperFiles, warnings };
 }
 
 export async function discoverSkill(
@@ -279,7 +301,13 @@ async function inspectSkill(
   const firstProblem = problems.length;
   const files: SourceSkillFile[] = [];
 
-  await collectSkillFiles(sourceRoot, skillPath, skillPath, files, problems);
+  await collectSourceDirectoryFiles(
+    sourceRoot,
+    skillPath,
+    skillPath,
+    files,
+    problems,
+  );
   files.sort((left, right) =>
     compareText(left.sourceRelativePath, right.sourceRelativePath),
   );
@@ -330,7 +358,7 @@ async function inspectSkill(
   };
 }
 
-async function collectSkillFiles(
+async function collectSourceDirectoryFiles(
   sourceRoot: string,
   skillPath: string,
   directoryPath: string,
@@ -347,7 +375,7 @@ async function collectSkillFiles(
     }
 
     if (stats.isDirectory()) {
-      await collectSkillFiles(
+      await collectSourceDirectoryFiles(
         sourceRoot,
         skillPath,
         entryPath,
@@ -369,7 +397,31 @@ async function collectSkillFiles(
     problems.push({
       path: entryPath,
       skillPath,
-      message: `Skills may contain only regular files and directories; found ${describeNode(stats)}.`,
+      message: `Source directories may contain only regular files and directories; found ${describeNode(stats)}.`,
+    });
+  }
+}
+
+async function collectHelperFiles(
+  sourceRoot: string,
+  directoryPath: string,
+  helperName: string,
+  files: SourceHelperFile[],
+  problems: SkillValidationProblem[],
+): Promise<void> {
+  const discovered: SourceSkillFile[] = [];
+  await collectSourceDirectoryFiles(
+    sourceRoot,
+    directoryPath,
+    directoryPath,
+    discovered,
+    problems,
+  );
+  for (const file of discovered) {
+    files.push({
+      absolutePath: file.absolutePath,
+      sourceRelativePath: file.sourceRelativePath,
+      helperName,
     });
   }
 }
