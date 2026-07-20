@@ -203,9 +203,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  distributor: 'link:'
-
 importers:
 
   .:
@@ -219,9 +216,6 @@ importers:
       cosmiconfig:
         specifier: ^9.0.2
         version: 9.0.2(typescript@7.0.2)
-      distributor:
-        specifier: 'link:'
-        version: 'link:'
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1

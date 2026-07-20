@@ -120,12 +120,7 @@ async function installConsumer(tarballPath, packageJson) {
     )}\n`,
     "utf8",
   );
-  await writeFile(
-    join(consumerRoot, "pnpm-workspace.yaml"),
-    "allowBuilds:\n  esbuild: true\n",
-    "utf8",
-  );
-  await runPnpm(["install"], { cwd: consumerRoot });
+  await runNpm(["install"], { cwd: consumerRoot });
   return consumerRoot;
 }
 
@@ -150,10 +145,10 @@ async function verifyBin(packageRoot, packageJson, consumerRoot) {
     );
   }
 
-  const help = await runPnpm(["exec", "distributor", "--help"], {
+  const help = await runNpm(["exec", "--", "distributor", "--help"], {
     cwd: consumerRoot,
   });
-  const shortHelp = await runPnpm(["exec", "distributor", "-h"], {
+  const shortHelp = await runNpm(["exec", "--", "distributor", "-h"], {
     cwd: consumerRoot,
   });
   assert.equal(shortHelp.stdout, help.stdout);
@@ -168,10 +163,10 @@ async function verifyBin(packageRoot, packageJson, consumerRoot) {
   );
   assert.equal(help.stderr, "");
 
-  const version = await runPnpm(["exec", "distributor", "--version"], {
+  const version = await runNpm(["exec", "--", "distributor", "--version"], {
     cwd: consumerRoot,
   });
-  const shortVersion = await runPnpm(["exec", "distributor", "-V"], {
+  const shortVersion = await runNpm(["exec", "--", "distributor", "-V"], {
     cwd: consumerRoot,
   });
   assert.equal(version.stdout, `${packageJson.version}\n`);
@@ -263,6 +258,24 @@ async function runPnpm(args, options = {}) {
     });
   }
   return run("pnpm", args, options);
+}
+
+async function runNpm(args, options = {}) {
+  if (process.platform === "win32") {
+    for (const arg of args) {
+      assert.match(
+        arg,
+        /^[a-z0-9@._:/=+-]+$/iu,
+        `Unsafe Windows npm argument: ${arg}`,
+      );
+    }
+    return run(`npm.cmd ${args.join(" ")}`, [], {
+      ...options,
+      argumentsAreEmbedded: true,
+      shell: true,
+    });
+  }
+  return run("npm", args, options);
 }
 
 function run(command, args, options = {}) {
