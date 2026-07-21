@@ -242,6 +242,56 @@ describe("runSync orchestration", () => {
 });
 
 describe("runSync filesystem guarantees", () => {
+  it("links helper files and directories alongside valid skills", async () => {
+    await useFixture(async (root) => {
+      const sourceRoot = join(root, ".agents", "skills");
+      const skillRoot = join(sourceRoot, "review");
+      const helperFile = join(sourceRoot, "_bqe-core-reference", "schema.json");
+      await mkdir(skillRoot, { recursive: true });
+      await mkdir(dirname(helperFile), { recursive: true });
+      await writeFile(
+        join(root, "distributor.config.json"),
+        JSON.stringify({ harnesses: ["claude-code"] }),
+        "utf8",
+      );
+      await writeFile(
+        join(skillRoot, "SKILL.md"),
+        "---\nname: review\ndescription: Review code.\n---\n",
+        "utf8",
+      );
+      await writeFile(helperFile, "{}\n", "utf8");
+      await writeFile(
+        join(sourceRoot, "shared.md"),
+        "Shared guidance.\n",
+        "utf8",
+      );
+
+      const result = await runSync({ cwd: root });
+      const helperTarget = join(
+        root,
+        ".claude",
+        "skills",
+        "_bqe-core-reference",
+        "schema.json",
+      );
+      const rootFileTarget = join(root, ".claude", "skills", "shared.md");
+
+      expect(result.counts.source).toEqual({ skills: 1, files: 3 });
+      expect(result.counts.physicalOperations).toMatchObject({
+        total: 3,
+        create: 3,
+      });
+      expect((await lstat(helperTarget)).isSymbolicLink()).toBe(true);
+      expect((await lstat(rootFileTarget)).isSymbolicLink()).toBe(true);
+      expect(await readlink(helperTarget)).toBe(
+        relative(dirname(helperTarget), helperFile),
+      );
+      expect(await readlink(rootFileTarget)).toBe(
+        relative(dirname(rootFileTarget), join(sourceRoot, "shared.md")),
+      );
+    });
+  });
+
   it("keeps an ineffective state-ignore warning at dry-run/apply parity", async () => {
     await useFixture(async (root) => {
       const skillRoot = join(root, ".agents", "skills", "review");
@@ -409,6 +459,7 @@ function orchestrationFixture(): OrchestrationFixture {
           ],
         },
       ],
+      helperFiles: [],
       warnings: [
         {
           code: "ignored-source-root-file",

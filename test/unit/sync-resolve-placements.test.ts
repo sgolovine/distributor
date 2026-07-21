@@ -14,6 +14,7 @@ import type {
 import { DistributorError } from "../../src/errors.js";
 import type {
   SkillDiscoveryResult,
+  SourceHelperFile,
   SourceSkill,
 } from "../../src/skills/discover.js";
 import { resolvePlacements } from "../../src/sync/resolve-placements.js";
@@ -66,6 +67,33 @@ describe("resolvePlacements", () => {
       realPath: sourceRoot,
       device: 1,
       inode: 1,
+    });
+  });
+
+  it("maps helper files at their unchanged source-relative paths", () => {
+    const sourceRoot = "/project/.agents/skills";
+    const result = resolvePlacements(
+      projectConfig("/project", sourceRoot, [automatic("claude-code")]),
+      discovery(
+        sourceRoot,
+        [skill(sourceRoot, "review")],
+        [
+          helperFile(sourceRoot, "_bqe-core-reference/schema.json"),
+          helperFile(sourceRoot, "shared.md"),
+        ],
+      ),
+      { pathStyle: "posix" },
+    );
+
+    expect(result.mappings.map((mapping) => mapping.targetPath)).toEqual([
+      "/project/.claude/skills/_bqe-core-reference/schema.json",
+      "/project/.claude/skills/review/SKILL.md",
+      "/project/.claude/skills/shared.md",
+    ]);
+    expect(result.mappings[0]).toMatchObject({
+      skillName: "_bqe-core-reference",
+      sourcePath: "/project/.agents/skills/_bqe-core-reference/schema.json",
+      linkValue: "../../../.agents/skills/_bqe-core-reference/schema.json",
     });
   });
 
@@ -499,6 +527,7 @@ function projectConfig(
 function discovery(
   sourceRoot: string,
   skills: readonly SourceSkill[],
+  helperFiles: readonly SourceHelperFile[] = [],
 ): SkillDiscoveryResult {
   return {
     sourceRoot,
@@ -508,7 +537,19 @@ function discovery(
       inode: 1,
     },
     skills: [...skills],
+    helperFiles: [...helperFiles],
     warnings: [],
+  };
+}
+
+function helperFile(
+  sourceRoot: string,
+  sourceRelativePath: string,
+): SourceHelperFile {
+  return {
+    absolutePath: posix.join(sourceRoot, sourceRelativePath),
+    sourceRelativePath,
+    helperName: sourceRelativePath.split("/", 1)[0] ?? sourceRelativePath,
   };
 }
 

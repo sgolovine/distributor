@@ -25,6 +25,7 @@ import {
 } from "../filesystem/paths.js";
 import type {
   SkillDiscoveryResult,
+  SourceHelperFile,
   SourceRootIdentity,
   SourceSkill,
 } from "../skills/discover.js";
@@ -214,6 +215,7 @@ export function resolvePlacements(
       sourceRoot,
       placements,
       discovery.skills,
+      discovery.helperFiles,
       style,
       pathApi,
     ),
@@ -383,12 +385,13 @@ function buildMappings(
   sourceRoot: string,
   placements: readonly ResolvedTargetPlacement[],
   discoveredSkills: readonly SourceSkill[],
+  helperFiles: readonly SourceHelperFile[],
   style: PathStyle,
   pathApi: typeof posix,
 ): PlannedFile[] {
   const byTarget = new Map<string, MutableMapping>();
-  const skills = [...discoveredSkills].sort((left, right) =>
-    compareText(left.name, right.name),
+  const sources = sourceEntries(discoveredSkills, helperFiles).sort(
+    (left, right) => compareText(left.name, right.name),
   );
   const openAiMetadataPaths = new Set([
     pathApi.join("agents", "openai.yaml"),
@@ -396,14 +399,15 @@ function buildMappings(
   ]);
 
   for (const placement of placements) {
-    for (const skill of skills) {
-      const files = [...skill.files].sort((left, right) =>
+    for (const source of sources) {
+      const files = [...source.files].sort((left, right) =>
         compareText(left.sourceRelativePath, right.sourceRelativePath),
       );
 
       for (const file of files) {
         if (
           placement.harnessId !== "codex" &&
+          file.skillRelativePath !== undefined &&
           openAiMetadataPaths.has(file.skillRelativePath)
         ) {
           continue;
@@ -462,7 +466,7 @@ function buildMappings(
 
         if (existing === undefined) {
           byTarget.set(targetKey, {
-            skillName: skill.name,
+            skillName: source.name,
             sourcePath,
             targetPath,
             linkValue,
@@ -483,7 +487,7 @@ function buildMappings(
         }
         if (
           existing.sourcePath !== sourcePath ||
-          existing.skillName !== skill.name ||
+          existing.skillName !== source.name ||
           existing.linkValue !== linkValue
         ) {
           throw mappingConflict(
@@ -509,6 +513,38 @@ function buildMappings(
       attributions: mapping.attributions.sort(compareAttribution),
     }))
     .sort(compareMapping);
+}
+
+interface MappableSourceFile {
+  readonly absolutePath: string;
+  readonly sourceRelativePath: string;
+  readonly skillRelativePath?: string;
+}
+
+interface MappableSource {
+  readonly name: string;
+  readonly files: MappableSourceFile[];
+}
+
+function sourceEntries(
+  discoveredSkills: readonly SourceSkill[],
+  helperFiles: readonly SourceHelperFile[],
+): MappableSource[] {
+  const sources: MappableSource[] = discoveredSkills.map((skill) => ({
+    name: skill.name,
+    files: [...skill.files],
+  }));
+
+  for (const file of helperFiles) {
+    const source = sources.find((item) => item.name === file.helperName);
+    if (source === undefined) {
+      sources.push({ name: file.helperName, files: [file] });
+    } else {
+      source.files.push(file);
+    }
+  }
+
+  return sources;
 }
 
 function mappingConflict(

@@ -468,7 +468,9 @@ function buildCounts(
     .map(freezeHarnessCounts);
   const source = Object.freeze({
     skills: skills.skills.length,
-    files: skills.skills.reduce((count, skill) => count + skill.files.length, 0),
+    files:
+      skills.helperFiles.length +
+      skills.skills.reduce((count, skill) => count + skill.files.length, 0),
   });
   const frozenPhysicalOperations = freezeOperationCounts(physicalOperations);
 

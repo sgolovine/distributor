@@ -228,6 +228,24 @@ describe("Distributor CLI", () => {
     );
   });
 
+  it("summarizes helper-only syncs instead of reporting an empty source", async () => {
+    const base = syncResult({ dryRun: false });
+    const result: RunSyncResult = {
+      ...base,
+      counts: {
+        ...base.counts,
+        source: { skills: 0, files: 2 },
+      },
+    };
+    const context = testContext({ runSync: async () => result });
+
+    expect(await context.run(["sync"])).toBe(0);
+    expect(context.stdout()).toContain(
+      "Synced 0 skills (2 files) to 2 harnesses.",
+    );
+    expect(context.stdout()).not.toContain("No skills found");
+  });
+
   it.each([
     [["unknown"], "unknown command"],
     [["sync", "--unknown"], "unknown option"],

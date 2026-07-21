@@ -213,7 +213,7 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
 function formatSyncHeading(result: RunSyncResult): string {
   const { skills, files } = result.counts.source;
   const harnesses = result.counts.harnesses.length;
-  if (skills === 0) {
+  if (skills === 0 && files === 0) {
     return `No skills found in ${result.sourceRoot}. Add a skill directory containing SKILL.md.\n`;
   }
 
