@@ -119,6 +119,42 @@ describe("status", () => {
     });
   });
 
+  it("warns about every invalid skill while reporting valid skills", async () => {
+    await useFixture(async (root) => {
+      await writeConfig(root);
+      await writeSkill(root, "alpha");
+      await writeInvalidSkill(root, "missing-frontmatter", "No frontmatter");
+      await writeInvalidSkill(
+        root,
+        "missing-description",
+        "---\nname: missing-description\n---\n",
+      );
+
+      const result = await runStatus({ cwd: root });
+
+      expect(result).toMatchObject({
+        exitCode: 0,
+        skills: 1,
+        references: 2,
+      });
+      expect(result.skillStatuses.map((skill) => skill.name)).toEqual([
+        "alpha",
+      ]);
+      expect(result.warnings).toEqual([
+        expect.objectContaining({
+          code: "invalid-skill",
+          path: join(root, ".agents", "skills", "missing-description"),
+          message: expect.stringContaining("Skipped invalid skill"),
+        }),
+        expect.objectContaining({
+          code: "invalid-skill",
+          path: join(root, ".agents", "skills", "missing-frontmatter"),
+          message: expect.stringContaining("Skipped invalid skill"),
+        }),
+      ]);
+    });
+  });
+
   it("reports a changed managed link as out of date without failing", async () => {
     await useFixture(async (root) => {
       await writeConfig(root);
@@ -162,15 +198,23 @@ async function writeConfig(root: string): Promise<void> {
 }
 
 async function writeSkill(root: string, name: string): Promise<void> {
-  const skillPath = join(root, ".agents", "skills", name, "SKILL.md");
-  await mkdir(dirname(skillPath), { recursive: true });
-  await writeFile(
-    skillPath,
+  await writeInvalidSkill(
+    root,
+    name,
     `---
 name: ${name}
 description: ${name} skill.
 ---
 `,
-    "utf8",
   );
+}
+
+async function writeInvalidSkill(
+  root: string,
+  name: string,
+  contents: string,
+): Promise<void> {
+  const skillPath = join(root, ".agents", "skills", name, "SKILL.md");
+  await mkdir(dirname(skillPath), { recursive: true });
+  await writeFile(skillPath, contents, "utf8");
 }

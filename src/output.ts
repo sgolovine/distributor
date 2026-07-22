@@ -178,6 +178,13 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       writeOut("\n");
       writeOut(formatStoragePathsTable(result));
       writeOut("\n");
+      for (const warning of result.warnings) {
+        writeOut(
+          colors.yellow(
+            `Warning: ${formatDiagnosticPath(warning.path, result.projectRoot)}: ${warning.message}\n`,
+          ),
+        );
+      }
       if (result.upToDate) {
         writeOut("References are up to date.\n");
         return;

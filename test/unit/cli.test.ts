@@ -208,6 +208,29 @@ describe("Distributor CLI", () => {
     expect(context.stderr()).toBe("");
   });
 
+  it("renders warnings for invalid skills in status output", async () => {
+    const base = statusResult();
+    const context = testContext({
+      runStatus: async () => ({
+        ...base,
+        warnings: [
+          {
+            code: "invalid-skill" as const,
+            path: "/project/.agents/skills/broken",
+            message:
+              'Skipped invalid skill "broken": SKILL.md: SKILL.md must begin with a YAML frontmatter delimiter (---).',
+          },
+        ],
+      }),
+    });
+
+    expect(await context.run(["status"])).toBe(0);
+    expect(context.stdout()).toContain(
+      'Warning: .agents/skills/broken: Skipped invalid skill "broken"',
+    );
+    expect(context.stderr()).toBe("");
+  });
+
   it("renders empty-source guidance, stale counts, and warning details", async () => {
     const base = syncResult({ dryRun: false });
     const staleOperations = {
@@ -493,6 +516,7 @@ function statusResult(
         ],
       },
     ],
+    warnings: [],
     upToDate: options.upToDate ?? true,
   };
 }

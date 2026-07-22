@@ -30,7 +30,7 @@ export interface SourceSkill {
 }
 
 export interface SkillDiscoveryWarning {
-  code: "ignored-source-root-file";
+  code: "ignored-source-root-file" | "invalid-skill";
   path: string;
   message: string;
 }
@@ -130,8 +130,16 @@ export async function discoverSkills(
     if (stats.isDirectory()) {
       const entries = await readDirectory(entryPath, problems, entryPath);
       if (entries.includes("SKILL.md")) {
-        const skill = await inspectSkill(sourceRoot, entryPath, name, problems);
-        if (skill !== undefined) {
+        const skillProblems: SkillValidationProblem[] = [];
+        const skill = await inspectSkill(
+          sourceRoot,
+          entryPath,
+          name,
+          skillProblems,
+        );
+        if (skill === undefined) {
+          warnings.push(invalidSkillWarning(entryPath, name, skillProblems));
+        } else {
           skills.push(skill);
         }
       } else {
@@ -636,6 +644,26 @@ function describeNode(stats: Stats): string {
     return "a directory";
   }
   return "an unsupported filesystem node";
+}
+
+function invalidSkillWarning(
+  skillPath: string,
+  directoryName: string,
+  problems: readonly SkillValidationProblem[],
+): SkillDiscoveryWarning {
+  const details = problems
+    .map((problem) => {
+      const problemPath = relative(skillPath, problem.path) || ".";
+      const field = problem.field === undefined ? "" : ` (${problem.field})`;
+      return `${problemPath}${field}: ${problem.message}`;
+    })
+    .join("; ");
+
+  return {
+    code: "invalid-skill",
+    path: skillPath,
+    message: `Skipped invalid skill ${JSON.stringify(directoryName)}: ${details || "validation failed."}`,
+  };
 }
 
 function compareText(left: string, right: string): number {

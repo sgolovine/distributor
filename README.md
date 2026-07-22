@@ -52,9 +52,11 @@ ignore file without overwriting existing content. Plain `distributor init`
 prompts when run interactively. In a non-interactive terminal, use `--yes`.
 
 Each non-hidden directory immediately under the source root that contains a
-regular file named exactly `SKILL.md` is a skill and must have valid skill
-frontmatter. Other non-hidden files and directories are helper content and are
-preserved at the same relative paths as independent file links. The optional
+regular file named exactly `SKILL.md` is a skill. Skills with invalid
+frontmatter or unsafe entries are skipped and reported as warnings by `status`
+and `sync`; other valid skills continue to load. Other non-hidden files and
+directories are helper content and are preserved at the same relative paths as
+independent file links. The optional
 `agents/openai.yaml` (or `agents/openai.yml`) is emitted only to Codex targets
 and omitted from Claude, Cline, and every other non-Codex target.
 

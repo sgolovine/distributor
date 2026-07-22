@@ -7,6 +7,7 @@ import {
 import {
   discoverSkills,
   type SkillDiscoveryResult,
+  type SkillDiscoveryWarning,
 } from "../skills/discover.js";
 import { buildSyncPlan } from "../sync/plan.js";
 import {
@@ -59,6 +60,7 @@ export interface RunStatusResult {
   readonly references: number;
   readonly harnesses: readonly StatusHarness[];
   readonly skillStatuses: readonly StatusSkill[];
+  readonly warnings: readonly SkillDiscoveryWarning[];
   readonly upToDate: boolean;
 }
 
@@ -100,7 +102,11 @@ export async function runStatus(
       : { pathStyle: options.pathStyle }),
   });
   const state = await runtime.loadManagedState(config.projectRoot);
-  const plan = await runtime.buildSyncPlan(resolution, state);
+  const plan = await runtime.buildSyncPlan(resolution, state, {
+    preserveSourceRoots: skills.warnings
+      .filter((warning) => warning.code === "invalid-skill")
+      .map((warning) => warning.path),
+  });
 
   return {
     exitCode: 0,
@@ -128,6 +134,7 @@ export async function runStatus(
         }))
         .sort((left, right) => compareText(left.harnessId, right.harnessId)),
     })),
+    warnings: skills.warnings,
     upToDate:
       plan.applicable &&
       plan.operations.every((operation) => operation.kind === "skip"),

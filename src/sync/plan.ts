@@ -39,6 +39,7 @@ import type {
 
 export interface BuildSyncPlanOptions {
   readonly harnessId?: string;
+  readonly preserveSourceRoots?: readonly string[];
 }
 
 export interface ReadOnlySyncPlan extends SyncPlan {
@@ -77,7 +78,11 @@ export async function buildSyncPlan(
     resolution.sourceRoot,
     resolution.sourceRootIdentity,
   );
-  const stateEvaluation = await evaluateManagedState(state, options.harnessId);
+  const stateEvaluation = await evaluateManagedState(
+    state,
+    options.harnessId,
+    options.preserveSourceRoots,
+  );
   const desiredMappings = [...resolution.mappings].sort(comparePlannedFiles);
   const desiredTargets = new Set(
     desiredMappings.map((mapping) => pathComparisonKey(mapping.targetPath)),
