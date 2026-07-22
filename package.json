@@ -30,6 +30,7 @@
   ],
   "dependencies": {
     "@clack/prompts": "^1.7.0",
+    "ascii-table3": "^1.0.3",
     "commander": "^15.0.0",
     "cosmiconfig": "^9.0.2",
     "picocolors": "^1.1.1",

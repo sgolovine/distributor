@@ -1,3 +1,4 @@
+import { AsciiTable3 } from "ascii-table3";
 import picocolors from "picocolors";
 
 import { DistributorError } from "./errors.js";
@@ -171,19 +172,11 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       }
     },
     printStatus(result) {
-      writeOut(`Skills: ${result.skills}\n`);
-      writeOut(`Active references: ${result.references}\n\n`);
+      writeOut(formatReferenceTable(result));
+      writeOut("\n");
       writeOut(formatStatusTable(result));
-      writeOut("\nSkill storage paths:\n");
-      writeOut(
-        `source: ${formatDiagnosticPath(result.sourceRoot, result.projectRoot)}\n`,
-      );
-      for (const harness of result.harnesses) {
-        const paths = harness.storagePaths
-          .map((path) => formatDiagnosticPath(path, result.projectRoot))
-          .join(", ");
-        writeOut(`${harness.harnessId}: ${paths}\n`);
-      }
+      writeOut("\n");
+      writeOut(formatStoragePathsTable(result));
       writeOut("\n");
       if (result.upToDate) {
         writeOut("References are up to date.\n");
@@ -220,34 +213,57 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
   };
 }
 
-function formatStatusTable(result: RunStatusResult): string {
-  const headers = [
-    "Skill",
-    ...result.harnesses.map((harness) => harness.harnessId),
-  ];
-  const rows = result.skillStatuses.map((skill) => [
-    skill.name,
-    ...headers
-      .slice(1)
-      .map(
-        (harnessId) =>
-          skill.harnesses.find((harness) => harness.harnessId === harnessId)
-            ?.status ?? "not configured",
-      ),
-  ]);
-  const widths = headers.map((header, index) =>
-    Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
-  );
-  const formatRow = (row: readonly string[]): string =>
-    row
-      .map((cell, index) => cell.padEnd(widths[index] ?? cell.length))
-      .join(" | ")
-      .trimEnd();
-  const separator = widths.map((width) => "-".repeat(width)).join("-+-");
+function formatReferenceTable(result: RunStatusResult): string {
+  return new AsciiTable3("References")
+    .setHeading("Harness", "References")
+    .setAlignRight(2)
+    .addRowMatrix([
+      ...result.harnesses.map((harness) => [
+        harness.harnessId,
+        harness.references,
+      ]),
+      ["Total references", result.references],
+      ["Total skills", result.skills],
+    ])
+    .toString();
+}
 
-  return `${formatRow(headers)}\n${separator}\n${rows
-    .map((row) => formatRow(row))
-    .join("\n")}${rows.length === 0 ? "" : "\n"}`;
+function formatStatusTable(result: RunStatusResult): string {
+  const harnessIds = result.harnesses.map((harness) => harness.harnessId);
+  const table = new AsciiTable3("Skills")
+    .setHeading("Skill", ...harnessIds)
+    .addRowMatrix(
+      result.skillStatuses.map((skill) => [
+        skill.name,
+        ...harnessIds.map((harnessId) =>
+          skill.harnesses.find((harness) => harness.harnessId === harnessId)
+            ?.status === "configured"
+            ? "✓"
+            : "⚠",
+        ),
+      ]),
+    );
+
+  for (let index = 2; index <= harnessIds.length + 1; index += 1) {
+    table.setAlignCenter(index);
+  }
+
+  return table.toString();
+}
+
+function formatStoragePathsTable(result: RunStatusResult): string {
+  return new AsciiTable3("Skill storage paths")
+    .setHeading("Storage", "Path")
+    .addRowMatrix([
+      ["source", formatDiagnosticPath(result.sourceRoot, result.projectRoot)],
+      ...result.harnesses.flatMap((harness) =>
+        harness.storagePaths.map((path) => [
+          harness.harnessId,
+          formatDiagnosticPath(path, result.projectRoot),
+        ]),
+      ),
+    ])
+    .toString();
 }
 
 function formatSyncHeading(result: RunSyncResult): string {

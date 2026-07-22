@@ -25,10 +25,12 @@ describe("status", () => {
           {
             harnessId: "claude-code",
             storagePaths: [join(root, ".claude", "skills")],
+            references: 2,
           },
           {
             harnessId: "codex",
             storagePaths: [join(root, ".agents", "skills")],
+            references: 2,
           },
         ],
         skillStatuses: [
@@ -81,6 +83,38 @@ describe("status", () => {
           },
         ],
         upToDate: true,
+      });
+    });
+  });
+
+  it("reports reference counts for each configured harness", async () => {
+    await useFixture(async (root) => {
+      await writeFile(
+        join(root, "distributor.config.json"),
+        JSON.stringify({
+          source: ".agents/skills",
+          harnesses: [
+            {
+              name: "claude-code",
+              targets: [{ placement: "project" }, { placement: "user" }],
+            },
+            "codex",
+          ],
+        }),
+        "utf8",
+      );
+      await writeSkill(root, "alpha");
+      await writeSkill(root, "beta");
+
+      await expect(
+        runStatus({ cwd: root, homeDirectory: join(root, "home") }),
+      ).resolves.toMatchObject({
+        skills: 2,
+        references: 6,
+        harnesses: [
+          { harnessId: "claude-code", references: 4 },
+          { harnessId: "codex", references: 2 },
+        ],
       });
     });
   });

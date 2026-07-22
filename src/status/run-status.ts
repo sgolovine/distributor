@@ -37,6 +37,7 @@ export type SkillHarnessConfigurationStatus =
 export interface StatusHarness {
   readonly harnessId: string;
   readonly storagePaths: readonly string[];
+  readonly references: number;
 }
 
 export interface StatusSkillHarness {
@@ -107,7 +108,11 @@ export async function runStatus(
     sourceRoot: config.sourceRoot,
     skills: skills.skills.length,
     references: countReferences(skills, resolution),
-    harnesses: buildHarnessStatuses(config.harnesses, resolution),
+    harnesses: buildHarnessStatuses(
+      config.harnesses,
+      resolution,
+      skills.skills.length,
+    ),
     skillStatuses: skills.skills.map((skill) => ({
       name: skill.name,
       sourcePath: skill.directoryPath,
@@ -132,21 +137,29 @@ export async function runStatus(
 function buildHarnessStatuses(
   configuredHarnesses: readonly { readonly name: string }[],
   resolution: PlacementResolution,
+  skillCount: number,
 ): StatusHarness[] {
   return configuredHarnesses
-    .map((harness) => ({
-      harnessId: harness.name,
-      storagePaths: [
-        ...new Set([
-          ...resolution.placements
-            .filter((placement) => placement.harnessId === harness.name)
-            .map((placement) => placement.targetRoot),
-          ...resolution.satisfiedPlacements
-            .filter((placement) => placement.harnessId === harness.name)
-            .map((placement) => placement.sourceRoot),
-        ]),
-      ].sort(compareText),
-    }))
+    .map((harness) => {
+      const placements = resolution.placements.filter(
+        (placement) => placement.harnessId === harness.name,
+      );
+      const satisfiedPlacements = resolution.satisfiedPlacements.filter(
+        (placement) => placement.harnessId === harness.name,
+      );
+
+      return {
+        harnessId: harness.name,
+        storagePaths: [
+          ...new Set([
+            ...placements.map((placement) => placement.targetRoot),
+            ...satisfiedPlacements.map((placement) => placement.sourceRoot),
+          ]),
+        ].sort(compareText),
+        references:
+          skillCount * (placements.length + satisfiedPlacements.length),
+      };
+    })
     .sort((left, right) => compareText(left.harnessId, right.harnessId));
 }
 

@@ -171,19 +171,36 @@ describe("Distributor CLI", () => {
 
     expect(context.runStatus).toHaveBeenCalledWith({ cwd: "/workspace" });
     expect(context.stdout()).toBe(
-      "Skills: 3\n" +
-        "Active references: 6\n" +
+      "+-------------------------------+\n" +
+        "|          References           |\n" +
+        "+------------------+------------+\n" +
+        "|     Harness      | References |\n" +
+        "+------------------+------------+\n" +
+        "| claude-code      |          3 |\n" +
+        "| codex            |          3 |\n" +
+        "| Total references |          6 |\n" +
+        "| Total skills     |          3 |\n" +
+        "+------------------+------------+\n" +
         "\n" +
-        "Skill | claude-code | codex\n" +
-        "------+-------------+-----------\n" +
-        "alpha | needs sync  | configured\n" +
-        "beta  | configured  | configured\n" +
-        "gamma | conflict    | needs sync\n" +
+        "+-----------------------------+\n" +
+        "|           Skills            |\n" +
+        "+-------+-------------+-------+\n" +
+        "| Skill | claude-code | codex |\n" +
+        "+-------+-------------+-------+\n" +
+        "| alpha |      ⚠      |   ✓   |\n" +
+        "| beta  |      ✓      |   ✓   |\n" +
+        "| gamma |      ⚠      |   ⚠   |\n" +
+        "+-------+-------------+-------+\n" +
         "\n" +
-        "Skill storage paths:\n" +
-        "source: .agents/skills\n" +
-        "claude-code: .claude/skills\n" +
-        "codex: .agents/skills\n" +
+        "+------------------------------+\n" +
+        "|     Skill storage paths      |\n" +
+        "+-------------+----------------+\n" +
+        "|   Storage   |      Path      |\n" +
+        "+-------------+----------------+\n" +
+        "| source      | .agents/skills |\n" +
+        "| claude-code | .claude/skills |\n" +
+        "| codex       | .agents/skills |\n" +
+        "+-------------+----------------+\n" +
         "\n" +
         "References are out of date.\n" +
         "Run `distributor sync` to bring your references up to date.\n",
@@ -442,8 +459,13 @@ function statusResult(
       {
         harnessId: "claude-code",
         storagePaths: ["/project/.claude/skills"],
+        references: 3,
       },
-      { harnessId: "codex", storagePaths: ["/project/.agents/skills"] },
+      {
+        harnessId: "codex",
+        storagePaths: ["/project/.agents/skills"],
+        references: 3,
+      },
     ],
     skillStatuses: [
       {
