@@ -173,6 +173,18 @@ describe("Distributor CLI", () => {
     expect(context.stdout()).toBe(
       "Skills: 3\n" +
         "Active references: 6\n" +
+        "\n" +
+        "Skill | claude-code | codex\n" +
+        "------+-------------+-----------\n" +
+        "alpha | needs sync  | configured\n" +
+        "beta  | configured  | configured\n" +
+        "gamma | conflict    | needs sync\n" +
+        "\n" +
+        "Skill storage paths:\n" +
+        "source: .agents/skills\n" +
+        "claude-code: .claude/skills\n" +
+        "codex: .agents/skills\n" +
+        "\n" +
         "References are out of date.\n" +
         "Run `distributor sync` to bring your references up to date.\n",
     );
@@ -426,6 +438,39 @@ function statusResult(
     sourceRoot: "/project/.agents/skills",
     skills: 3,
     references: 6,
+    harnesses: [
+      {
+        harnessId: "claude-code",
+        storagePaths: ["/project/.claude/skills"],
+      },
+      { harnessId: "codex", storagePaths: ["/project/.agents/skills"] },
+    ],
+    skillStatuses: [
+      {
+        name: "alpha",
+        sourcePath: "/project/.agents/skills/alpha",
+        harnesses: [
+          { harnessId: "claude-code", status: "needs sync" },
+          { harnessId: "codex", status: "configured" },
+        ],
+      },
+      {
+        name: "beta",
+        sourcePath: "/project/.agents/skills/beta",
+        harnesses: [
+          { harnessId: "claude-code", status: "configured" },
+          { harnessId: "codex", status: "configured" },
+        ],
+      },
+      {
+        name: "gamma",
+        sourcePath: "/project/.agents/skills/gamma",
+        harnesses: [
+          { harnessId: "claude-code", status: "conflict" },
+          { harnessId: "codex", status: "needs sync" },
+        ],
+      },
+    ],
     upToDate: options.upToDate ?? true,
   };
 }

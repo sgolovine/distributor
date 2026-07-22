@@ -21,6 +21,34 @@ describe("status", () => {
         exitCode: 0,
         skills: 2,
         references: 4,
+        harnesses: [
+          {
+            harnessId: "claude-code",
+            storagePaths: [join(root, ".claude", "skills")],
+          },
+          {
+            harnessId: "codex",
+            storagePaths: [join(root, ".agents", "skills")],
+          },
+        ],
+        skillStatuses: [
+          {
+            name: "alpha",
+            sourcePath: join(root, ".agents", "skills", "alpha"),
+            harnesses: [
+              { harnessId: "claude-code", status: "needs sync" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+          {
+            name: "beta",
+            sourcePath: join(root, ".agents", "skills", "beta"),
+            harnesses: [
+              { harnessId: "claude-code", status: "needs sync" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+        ],
         upToDate: false,
       });
       await expect(lstat(statePathForProject(root))).rejects.toMatchObject({
@@ -36,6 +64,22 @@ describe("status", () => {
         exitCode: 0,
         skills: 2,
         references: 4,
+        skillStatuses: [
+          {
+            name: "alpha",
+            harnesses: [
+              { harnessId: "claude-code", status: "configured" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+          {
+            name: "beta",
+            harnesses: [
+              { harnessId: "claude-code", status: "configured" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+        ],
         upToDate: true,
       });
     });
@@ -60,6 +104,15 @@ describe("status", () => {
         exitCode: 0,
         skills: 1,
         references: 2,
+        skillStatuses: [
+          {
+            name: "alpha",
+            harnesses: [
+              { harnessId: "claude-code", status: "conflict" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+        ],
         upToDate: false,
       });
     });

@@ -172,15 +172,25 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
     },
     printStatus(result) {
       writeOut(`Skills: ${result.skills}\n`);
-      writeOut(`Active references: ${result.references}\n`);
+      writeOut(`Active references: ${result.references}\n\n`);
+      writeOut(formatStatusTable(result));
+      writeOut("\nSkill storage paths:\n");
+      writeOut(
+        `source: ${formatDiagnosticPath(result.sourceRoot, result.projectRoot)}\n`,
+      );
+      for (const harness of result.harnesses) {
+        const paths = harness.storagePaths
+          .map((path) => formatDiagnosticPath(path, result.projectRoot))
+          .join(", ");
+        writeOut(`${harness.harnessId}: ${paths}\n`);
+      }
+      writeOut("\n");
       if (result.upToDate) {
         writeOut("References are up to date.\n");
         return;
       }
       writeOut("References are out of date.\n");
-      writeOut(
-        "Run `distributor sync` to bring your references up to date.\n",
-      );
+      writeOut("Run `distributor sync` to bring your references up to date.\n");
     },
     printSync(result) {
       writeOut(formatSyncHeading(result));
@@ -208,6 +218,36 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       }
     },
   };
+}
+
+function formatStatusTable(result: RunStatusResult): string {
+  const headers = [
+    "Skill",
+    ...result.harnesses.map((harness) => harness.harnessId),
+  ];
+  const rows = result.skillStatuses.map((skill) => [
+    skill.name,
+    ...headers
+      .slice(1)
+      .map(
+        (harnessId) =>
+          skill.harnesses.find((harness) => harness.harnessId === harnessId)
+            ?.status ?? "not configured",
+      ),
+  ]);
+  const widths = headers.map((header, index) =>
+    Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
+  );
+  const formatRow = (row: readonly string[]): string =>
+    row
+      .map((cell, index) => cell.padEnd(widths[index] ?? cell.length))
+      .join(" | ")
+      .trimEnd();
+  const separator = widths.map((width) => "-".repeat(width)).join("-+-");
+
+  return `${formatRow(headers)}\n${separator}\n${rows
+    .map((row) => formatRow(row))
+    .join("\n")}${rows.length === 0 ? "" : "\n"}`;
 }
 
 function formatSyncHeading(result: RunSyncResult): string {

@@ -81,8 +81,10 @@ distributor remove                  # remove every managed link
 
 `distributor status` reports the number of source skills, the number of active
 skill-to-placement references, and whether those references are up to date. It
-uses the same read-only planning checks as sync and does not write links,
-directories, or managed state.
+also shows a skill-by-harness table with `configured`, `needs sync`, or
+`conflict` status and lists the source and harness storage paths. It uses the
+same read-only planning checks as sync and does not write links, directories,
+or managed state.
 
 `--harness <id>` may appear only once and must name an available harness that
 is enabled in the project config. A dry run follows the same config, skill,
