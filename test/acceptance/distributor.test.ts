@@ -471,11 +471,19 @@ describe("Distributor initial-release acceptance matrix", () => {
         "# no frontmatter\n",
         "utf8",
       );
-      const cli = await runCliAt(root, ["sync"]);
-      expect(cli.code).toBe(1);
-      expect(cli.stderr).toContain("SKILL.md must begin");
-      expect(cli.stderr).toContain(join(skillRoot, "SKILL.md"));
-      expect(cli.stderr).not.toContain("at ");
+      const status = await runCliAt(root, ["status"]);
+      expect(status.code).toBe(0);
+      expect(status.stdout).toContain('Skipped invalid skill "broken"');
+      expect(status.stdout).toContain("SKILL.md must begin");
+      expect(status.stdout).toContain(".agents/skills/broken");
+      expect(status.stderr).toBe("");
+
+      const sync = await runCliAt(root, ["sync"]);
+      expect(sync.code).toBe(0);
+      expect(sync.stdout).toContain('Skipped invalid skill "broken"');
+      expect(sync.stdout).toContain("SKILL.md must begin");
+      expect(sync.stdout).toContain(".agents/skills/broken");
+      expect(sync.stderr).toBe("");
     });
 
     await useFixture(async (root) => {

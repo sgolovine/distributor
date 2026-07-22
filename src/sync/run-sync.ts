@@ -163,6 +163,9 @@ export async function runSync(
   const state = await runtime.loadManagedState(config.projectRoot);
   const plan = await runtime.buildSyncPlan(resolution, state, {
     ...(options.harness === undefined ? {} : { harnessId: options.harness }),
+    preserveSourceRoots: skills.warnings
+      .filter((warning) => warning.code === "invalid-skill")
+      .map((warning) => warning.path),
   });
 
   if (

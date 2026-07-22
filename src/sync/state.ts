@@ -9,7 +9,9 @@ import {
 import { atomicWriteFile } from "../filesystem/atomic-write.js";
 import {
   deserializeStatePath,
+  isStrictChildPath,
   pathComparisonKey,
+  pathsAreEquivalent,
   serializeStatePath,
 } from "../filesystem/paths.js";
 import { ManagedStateSchema } from "./state-schema.js";
@@ -473,13 +475,17 @@ async function inspectOwnership(
 export async function evaluateManagedState(
   state: ManagedState,
   harnessId?: string,
+  preserveSourceRoots: readonly string[] = [],
 ): Promise<StateEvaluation> {
-  const evaluatedEntries = state.entries.filter((entry) =>
-    isEntryInScope(entry, harnessId),
-  );
-  const untouched = state.entries.filter(
-    (entry) => !isEntryInScope(entry, harnessId),
-  );
+  const shouldEvaluate = (entry: ManagedStateEntry) =>
+    isEntryInScope(entry, harnessId) &&
+    !preserveSourceRoots.some(
+      (sourceRoot) =>
+        pathsAreEquivalent(sourceRoot, entry.sourcePath) ||
+        isStrictChildPath(sourceRoot, entry.sourcePath),
+    );
+  const evaluatedEntries = state.entries.filter(shouldEvaluate);
+  const untouched = state.entries.filter((entry) => !shouldEvaluate(entry));
   const evaluated: StateOwnershipResult[] = [];
 
   for (const entry of evaluatedEntries) {

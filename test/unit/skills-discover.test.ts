@@ -101,7 +101,7 @@ describe("discoverSkills", () => {
     });
   });
 
-  it("aggregates frontmatter problems across skills", async () => {
+  it("skips invalid skills and reports their frontmatter problems", async () => {
     await useFixture(async (root) => {
       await mkdir(join(root, "first"));
       await mkdir(join(root, "second"));
@@ -118,31 +118,30 @@ describe("discoverSkills", () => {
       );
       await writeFile(join(root, "ignored.txt"), "ignored");
 
-      const error = await validationError(discoverSkills(root));
+      const result = await discoverSkills(root);
 
-      expect(error.problems.map((problem) => problem.skillPath)).toContain(
-        join(root, "first"),
-      );
-      expect(error.problems.map((problem) => problem.skillPath)).toContain(
-        join(root, "second"),
-      );
-      expect(error.problems).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path: join(root, "first", "SKILL.md"),
-            message: expect.stringContaining("must begin"),
-          }),
-          expect.objectContaining({
-            path: join(root, "second", "SKILL.md"),
-            field: "description",
-          }),
-          expect.objectContaining({
-            path: join(root, "second", "SKILL.md"),
-            field: "compatibility",
-          }),
-        ]),
-      );
-      expect(error.warnings).toEqual([]);
+      expect(result.skills).toEqual([]);
+      expect(result.helperFiles).toEqual([
+        {
+          absolutePath: join(root, "ignored.txt"),
+          sourceRelativePath: "ignored.txt",
+          helperName: "ignored.txt",
+        },
+      ]);
+      expect(result.warnings).toEqual([
+        {
+          code: "invalid-skill",
+          path: join(root, "first"),
+          message: expect.stringMatching(/Skipped invalid skill "first".*must begin/),
+        },
+        {
+          code: "invalid-skill",
+          path: join(root, "second"),
+          message: expect.stringMatching(
+            /Skipped invalid skill "second".*description.*compatibility/,
+          ),
+        },
+      ]);
     });
   });
 
@@ -161,12 +160,14 @@ describe("discoverSkills", () => {
         ].join("\n"),
       );
 
-      const error = await validationError(discoverSkills(root));
+      const result = await discoverSkills(root);
 
-      expect(error.problems).toEqual([
+      expect(result.skills).toEqual([]);
+      expect(result.warnings).toEqual([
         expect.objectContaining({
-          field: "metadata",
-          message: "Metadata keys must be strings.",
+          code: "invalid-skill",
+          path: join(root, "metadata"),
+          message: expect.stringMatching(/metadata.*Metadata keys must be strings/),
         }),
       ]);
     });
@@ -198,11 +199,13 @@ describe("discoverSkills", () => {
         "---\n- name: sequence\n- description: invalid\n---\n",
       );
 
-      const error = await validationError(discoverSkills(root));
+      const result = await discoverSkills(root);
 
-      expect(error.problems).toEqual([
+      expect(result.skills).toEqual([]);
+      expect(result.warnings).toEqual([
         expect.objectContaining({
-          path: join(root, "sequence", "SKILL.md"),
+          code: "invalid-skill",
+          path: join(root, "sequence"),
           message: expect.stringContaining("YAML mapping"),
         }),
       ]);
@@ -245,18 +248,19 @@ describe("discoverSkills", () => {
 
       const error = await validationError(discoverSkills(root));
 
-      expect(error.problems).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path: join(root, "linked-skill"),
-            message: expect.stringContaining("symbolic link"),
-          }),
-          expect.objectContaining({
-            path: join(root, "valid", "broken.md"),
-            message: expect.stringContaining("symbolic link"),
-          }),
-        ]),
-      );
+      expect(error.problems).toEqual([
+        expect.objectContaining({
+          path: join(root, "linked-skill"),
+          message: expect.stringContaining("symbolic link"),
+        }),
+      ]);
+      expect(error.warnings).toEqual([
+        expect.objectContaining({
+          code: "invalid-skill",
+          path: join(root, "valid"),
+          message: expect.stringContaining("broken.md"),
+        }),
+      ]);
     });
   });
 
@@ -297,11 +301,13 @@ describe("discoverSkills", () => {
         "throw new Error('must not execute');\n",
       );
 
-      const error = await validationError(discoverSkills(root));
+      const result = await discoverSkills(root);
 
-      expect(error.problems).toEqual([
+      expect(result.skills).toEqual([]);
+      expect(result.warnings).toEqual([
         expect.objectContaining({
-          path: join(root, "duplicate", "SKILL.md"),
+          code: "invalid-skill",
+          path: join(root, "duplicate"),
           message: expect.stringContaining("Map keys must be unique"),
         }),
       ]);

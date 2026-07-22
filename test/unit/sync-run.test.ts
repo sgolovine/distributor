@@ -292,6 +292,92 @@ describe("runSync filesystem guarantees", () => {
     });
   });
 
+  it("skips invalid skills with a warning and syncs valid skills", async () => {
+    await useFixture(async (root) => {
+      const sourceRoot = join(root, ".agents", "skills");
+      const validRoot = join(sourceRoot, "review");
+      const invalidRoot = join(sourceRoot, "broken");
+      await mkdir(validRoot, { recursive: true });
+      await mkdir(invalidRoot, { recursive: true });
+      await writeFile(
+        join(root, "distributor.config.json"),
+        JSON.stringify({ harnesses: ["claude-code"] }),
+        "utf8",
+      );
+      await writeFile(
+        join(validRoot, "SKILL.md"),
+        "---\nname: review\ndescription: Review code.\n---\n",
+        "utf8",
+      );
+      await writeFile(
+        join(invalidRoot, "SKILL.md"),
+        "Missing frontmatter.\n",
+        "utf8",
+      );
+
+      const result = await runSync({ cwd: root });
+
+      expect(result).toMatchObject({ exitCode: 0, applied: true });
+      expect(result.counts.source).toEqual({ skills: 1, files: 1 });
+      expect(result.warnings).toEqual([
+        expect.objectContaining({
+          path: invalidRoot,
+          message: expect.stringContaining('Skipped invalid skill "broken"'),
+        }),
+      ]);
+      expect(
+        (await lstat(
+          join(root, ".claude", "skills", "review", "SKILL.md"),
+        )).isSymbolicLink(),
+      ).toBe(true);
+      await expect(
+        access(join(root, ".claude", "skills", "broken")),
+      ).rejects.toThrow();
+    });
+  });
+
+  it("preserves managed references when a previously valid skill becomes invalid", async () => {
+    await useFixture(async (root) => {
+      const skillRoot = join(root, ".agents", "skills", "review");
+      const skillFile = join(skillRoot, "SKILL.md");
+      const target = join(root, ".claude", "skills", "review", "SKILL.md");
+      await mkdir(skillRoot, { recursive: true });
+      await writeFile(
+        join(root, "distributor.config.json"),
+        JSON.stringify({ harnesses: ["claude-code"] }),
+        "utf8",
+      );
+      await writeFile(
+        skillFile,
+        "---\nname: review\ndescription: Review code.\n---\n",
+        "utf8",
+      );
+      await runSync({ cwd: root });
+      const originalLink = await readlink(target);
+
+      await writeFile(skillFile, "Missing frontmatter.\n", "utf8");
+      const result = await runSync({ cwd: root });
+      const state = JSON.parse(
+        await readFile(join(root, ".distributor", "state.json"), "utf8"),
+      ) as { entries: unknown[] };
+
+      expect(result).toMatchObject({ exitCode: 0, applied: true });
+      expect(result.counts.physicalOperations).toMatchObject({
+        total: 0,
+        stale: 0,
+      });
+      expect(result.warnings).toEqual([
+        expect.objectContaining({
+          path: skillRoot,
+          message: expect.stringContaining('Skipped invalid skill "review"'),
+        }),
+      ]);
+      expect((await lstat(target)).isSymbolicLink()).toBe(true);
+      expect(await readlink(target)).toBe(originalLink);
+      expect(state.entries).toHaveLength(1);
+    });
+  });
+
   it("keeps an ineffective state-ignore warning at dry-run/apply parity", async () => {
     await useFixture(async (root) => {
       const skillRoot = join(root, ".agents", "skills", "review");
