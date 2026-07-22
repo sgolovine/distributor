@@ -79,9 +79,11 @@ distributor sync --dry-run          # plan without writing
 distributor remove                  # remove every managed link
 ```
 
-`distributor status` reports the number of source skills, the number of active
-skill-to-placement references, and whether those references are up to date. It
-uses the same read-only planning checks as sync and does not write links,
+`distributor status` shows table summaries for source skills, skill-to-placement
+references per configured harness, skill configuration, and source and harness
+storage paths. A configured skill uses `✓`; a skill that needs sync or has a
+conflict uses `⚠`. The command also reports whether references are up to date.
+It uses the same read-only planning checks as sync and does not write links,
 directories, or managed state.
 
 `--harness <id>` may appear only once and must name an available harness that

@@ -1,3 +1,4 @@
+import { AsciiTable3 } from "ascii-table3";
 import picocolors from "picocolors";
 
 import { DistributorError } from "./errors.js";
@@ -171,16 +172,18 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       }
     },
     printStatus(result) {
-      writeOut(`Skills: ${result.skills}\n`);
-      writeOut(`Active references: ${result.references}\n`);
+      writeOut(formatReferenceTable(result));
+      writeOut("\n");
+      writeOut(formatStatusTable(result));
+      writeOut("\n");
+      writeOut(formatStoragePathsTable(result));
+      writeOut("\n");
       if (result.upToDate) {
         writeOut("References are up to date.\n");
         return;
       }
       writeOut("References are out of date.\n");
-      writeOut(
-        "Run `distributor sync` to bring your references up to date.\n",
-      );
+      writeOut("Run `distributor sync` to bring your references up to date.\n");
     },
     printSync(result) {
       writeOut(formatSyncHeading(result));
@@ -208,6 +211,59 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
       }
     },
   };
+}
+
+function formatReferenceTable(result: RunStatusResult): string {
+  return new AsciiTable3("References")
+    .setHeading("Harness", "References")
+    .setAlignRight(2)
+    .addRowMatrix([
+      ...result.harnesses.map((harness) => [
+        harness.harnessId,
+        harness.references,
+      ]),
+      ["Total references", result.references],
+      ["Total skills", result.skills],
+    ])
+    .toString();
+}
+
+function formatStatusTable(result: RunStatusResult): string {
+  const harnessIds = result.harnesses.map((harness) => harness.harnessId);
+  const table = new AsciiTable3("Skills")
+    .setHeading("Skill", ...harnessIds)
+    .addRowMatrix(
+      result.skillStatuses.map((skill) => [
+        skill.name,
+        ...harnessIds.map((harnessId) =>
+          skill.harnesses.find((harness) => harness.harnessId === harnessId)
+            ?.status === "configured"
+            ? "✓"
+            : "⚠",
+        ),
+      ]),
+    );
+
+  for (let index = 2; index <= harnessIds.length + 1; index += 1) {
+    table.setAlignCenter(index);
+  }
+
+  return table.toString();
+}
+
+function formatStoragePathsTable(result: RunStatusResult): string {
+  return new AsciiTable3("Skill storage paths")
+    .setHeading("Storage", "Path")
+    .addRowMatrix([
+      ["source", formatDiagnosticPath(result.sourceRoot, result.projectRoot)],
+      ...result.harnesses.flatMap((harness) =>
+        harness.storagePaths.map((path) => [
+          harness.harnessId,
+          formatDiagnosticPath(path, result.projectRoot),
+        ]),
+      ),
+    ])
+    .toString();
 }
 
 function formatSyncHeading(result: RunSyncResult): string {

@@ -21,6 +21,36 @@ describe("status", () => {
         exitCode: 0,
         skills: 2,
         references: 4,
+        harnesses: [
+          {
+            harnessId: "claude-code",
+            storagePaths: [join(root, ".claude", "skills")],
+            references: 2,
+          },
+          {
+            harnessId: "codex",
+            storagePaths: [join(root, ".agents", "skills")],
+            references: 2,
+          },
+        ],
+        skillStatuses: [
+          {
+            name: "alpha",
+            sourcePath: join(root, ".agents", "skills", "alpha"),
+            harnesses: [
+              { harnessId: "claude-code", status: "needs sync" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+          {
+            name: "beta",
+            sourcePath: join(root, ".agents", "skills", "beta"),
+            harnesses: [
+              { harnessId: "claude-code", status: "needs sync" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+        ],
         upToDate: false,
       });
       await expect(lstat(statePathForProject(root))).rejects.toMatchObject({
@@ -36,7 +66,55 @@ describe("status", () => {
         exitCode: 0,
         skills: 2,
         references: 4,
+        skillStatuses: [
+          {
+            name: "alpha",
+            harnesses: [
+              { harnessId: "claude-code", status: "configured" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+          {
+            name: "beta",
+            harnesses: [
+              { harnessId: "claude-code", status: "configured" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+        ],
         upToDate: true,
+      });
+    });
+  });
+
+  it("reports reference counts for each configured harness", async () => {
+    await useFixture(async (root) => {
+      await writeFile(
+        join(root, "distributor.config.json"),
+        JSON.stringify({
+          source: ".agents/skills",
+          harnesses: [
+            {
+              name: "claude-code",
+              targets: [{ placement: "project" }, { placement: "user" }],
+            },
+            "codex",
+          ],
+        }),
+        "utf8",
+      );
+      await writeSkill(root, "alpha");
+      await writeSkill(root, "beta");
+
+      await expect(
+        runStatus({ cwd: root, homeDirectory: join(root, "home") }),
+      ).resolves.toMatchObject({
+        skills: 2,
+        references: 6,
+        harnesses: [
+          { harnessId: "claude-code", references: 4 },
+          { harnessId: "codex", references: 2 },
+        ],
       });
     });
   });
@@ -60,6 +138,15 @@ describe("status", () => {
         exitCode: 0,
         skills: 1,
         references: 2,
+        skillStatuses: [
+          {
+            name: "alpha",
+            harnesses: [
+              { harnessId: "claude-code", status: "conflict" },
+              { harnessId: "codex", status: "configured" },
+            ],
+          },
+        ],
         upToDate: false,
       });
     });
