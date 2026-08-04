@@ -96,9 +96,10 @@ describe("status", () => {
           harnesses: [
             {
               name: "claude-code",
+              useHarnessFolder: true,
               targets: [{ placement: "project" }, { placement: "user" }],
             },
-            "codex",
+            { name: "codex", useHarnessFolder: true },
           ],
         }),
         "utf8",
@@ -192,7 +193,7 @@ describe("status", () => {
 async function writeConfig(root: string): Promise<void> {
   await writeFile(
     join(root, "distributor.config.json"),
-    '{"source":".agents/skills","harnesses":["codex","claude-code"]}\n',
+    '{"source":".agents/skills","harnesses":[{"name":"codex","useHarnessFolder":true},{"name":"claude-code","useHarnessFolder":true}]}\n',
     "utf8",
   );
 }

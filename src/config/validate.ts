@@ -36,6 +36,7 @@ export interface ValidatedTargetSelection {
 
 export interface ValidatedHarnessSelection {
   readonly name: string;
+  readonly useHarnessFolder: boolean;
   readonly targets: readonly ValidatedTargetSelection[] | undefined;
 }
 
@@ -203,7 +204,7 @@ export function validateProjectConfig(
   }
 
   for (const [harnessIndex, selection] of parsed.harnesses.entries()) {
-    const name = typeof selection === "string" ? selection : selection.name;
+    const name = selection.name;
     const fieldPath = `harnesses[${harnessIndex}]`;
     const priorIndex = seenHarnesses.get(name);
     if (priorIndex !== undefined) {
@@ -246,8 +247,12 @@ export function validateProjectConfig(
     if (adapter === undefined) {
       throw new Error(`Available adapter metadata is missing for ${name}.`);
     }
-    if (typeof selection === "string" || selection.targets === undefined) {
-      harnesses.push({ name, targets: undefined });
+    if (selection.targets === undefined) {
+      harnesses.push({
+        name,
+        useHarnessFolder: selection.useHarnessFolder,
+        targets: undefined,
+      });
       continue;
     }
 
@@ -331,7 +336,11 @@ export function validateProjectConfig(
       });
     }
 
-    harnesses.push({ name, targets });
+    harnesses.push({
+      name,
+      useHarnessFolder: selection.useHarnessFolder,
+      targets,
+    });
   }
 
   if (issues.length > 0 || sourceRoot === undefined) {

@@ -12,15 +12,13 @@ export const TargetSelectionSchema = z
   })
   .strict();
 
-export const HarnessSelectionSchema = z.union([
-  z.string().min(1),
-  z
-    .object({
-      name: z.string().min(1),
-      targets: z.array(TargetSelectionSchema).min(1).optional(),
-    })
-    .strict(),
-]);
+export const HarnessSelectionSchema = z
+  .object({
+    name: z.string().min(1),
+    useHarnessFolder: z.boolean().default(false),
+    targets: z.array(TargetSelectionSchema).min(1).optional(),
+  })
+  .strict();
 
 export const DistributorConfigSchema = z
   .object({

@@ -2,11 +2,11 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
 import {
+  type AdapterRegistry,
   availableAdapterIds,
   builtInAdapterRegistry,
   getRegistryAvailableConfig,
   getRegistryCatalogEntry,
-  type AdapterRegistry,
   type HarnessPlacement,
 } from "../adapters/index.js";
 import type {
@@ -18,10 +18,10 @@ import { DistributorError } from "../errors.js";
 import {
   isStrictChildPath,
   normalizeAbsolutePath,
+  type PathStyle,
   pathComparisonKey,
   pathsAreEquivalent,
   resolveConfigPath,
-  type PathStyle,
 } from "../filesystem/paths.js";
 import type {
   SkillDiscoveryResult,
@@ -31,8 +31,8 @@ import type {
 } from "../skills/discover.js";
 import type {
   OwnershipAttribution,
-  PlannedFile,
   PlanNotice,
+  PlannedFile,
   SatisfiedPlacement,
 } from "./types.js";
 
@@ -78,7 +78,10 @@ export function resolvePlacements(
   const pathApi = style === "win32" ? win32 : posix;
   const projectRoot = normalizeAbsolutePath(config.projectRoot, style);
   const sourceRoot = normalizeAbsolutePath(config.sourceRoot, style);
-  const discoveredSourceRoot = normalizeAbsolutePath(discovery.sourceRoot, style);
+  const discoveredSourceRoot = normalizeAbsolutePath(
+    discovery.sourceRoot,
+    style,
+  );
   if (!pathsAreEquivalent(sourceRoot, discoveredSourceRoot, style)) {
     throw new DistributorError(
       "source",
@@ -86,7 +89,8 @@ export function resolvePlacements(
       {
         operation: "resolve placements",
         context: { sourceRoot, discoveredSourceRoot },
-        correction: "Rediscover skills from the configured source root and rerun sync.",
+        correction:
+          "Rediscover skills from the configured source root and rerun sync.",
       },
     );
   }
@@ -102,8 +106,13 @@ export function resolvePlacements(
 
   for (const harness of selectedHarnesses) {
     const adapter = getRegistryAvailableConfig(adapterRegistry, harness.name);
-    if (adapter === undefined || adapter.defaultProjectPlacementId === undefined) {
-      throw new Error(`Available adapter metadata is incomplete for ${harness.name}.`);
+    if (
+      adapter === undefined ||
+      adapter.defaultProjectPlacementId === undefined
+    ) {
+      throw new Error(
+        `Available adapter metadata is incomplete for ${harness.name}.`,
+      );
     }
 
     if (harness.targets === undefined) {
@@ -116,17 +125,16 @@ export function resolvePlacements(
               placement.support === "compatibility"),
         )
         .sort((left, right) => compareText(left.id, right.id));
-      const defaultPlacement =
-        config.scope === "global"
-          ? preferredGlobalPlacement(
-              compatible,
-              projectRoot,
-              style,
-              options.homeDirectory,
-            )
-          : adapter.placements.find(
-              (placement) => placement.id === adapter.defaultProjectPlacementId,
-            );
+      const defaultPlacement = preferredAutomaticPlacement(
+        compatible,
+        adapter.placements.find(
+          (placement) => placement.id === adapter.defaultProjectPlacementId,
+        ),
+        harness.useHarnessFolder,
+        projectRoot,
+        style,
+        options.homeDirectory,
+      );
       if (defaultPlacement === undefined) {
         throw new DistributorError(
           "config",
@@ -224,32 +232,44 @@ export function resolvePlacements(
   };
 }
 
-function preferredGlobalPlacement(
+function preferredAutomaticPlacement(
   compatible: readonly HarnessPlacement[],
+  defaultProjectPlacement: HarnessPlacement | undefined,
+  useHarnessFolder: boolean,
   projectRoot: string,
   style: PathStyle,
   homeDirectory: string | undefined,
 ): HarnessPlacement | undefined {
-  const sharedAgentsRoot = resolveAdapterPath(
-    "~/.agents/skills",
+  const agentsRoot = resolveAdapterPath(
+    compatible[0]?.scope === "user" ? "~/.agents/skills" : ".agents/skills",
     projectRoot,
     style,
     homeDirectory,
   );
-  return (
-    compatible.find((placement) =>
-      pathsAreEquivalent(
-        resolveAdapterPath(
-          placement.defaultPath,
-          projectRoot,
-          style,
-          homeDirectory,
-        ),
-        sharedAgentsRoot,
+  const agentsPlacement = compatible.find((placement) =>
+    pathsAreEquivalent(
+      resolveAdapterPath(
+        placement.defaultPath,
+        projectRoot,
         style,
+        homeDirectory,
       ),
-    ) ?? compatible.find((placement) => placement.support === "native")
+      agentsRoot,
+      style,
+    ),
   );
+  const harnessPlacement =
+    compatible.find(
+      (placement) => placement.id === defaultProjectPlacement?.id,
+    ) ??
+    compatible.find((placement) => placement.support === "native") ??
+    agentsPlacement;
+
+  if (agentsPlacement === undefined) {
+    return harnessPlacement;
+  }
+
+  return useHarnessFolder ? harnessPlacement : agentsPlacement;
 }
 
 function selectHarnesses(
@@ -359,7 +379,8 @@ function addPlacement(
           sourceRoot,
           targetRoot: resolved.targetRoot,
         },
-        correction: "Choose a target outside the source root to avoid recursive discovery.",
+        correction:
+          "Choose a target outside the source root to avoid recursive discovery.",
       },
     );
   }
@@ -500,7 +521,11 @@ function buildMappings(
           );
         }
 
-        if (!existing.attributions.some((item) => sameAttribution(item, attribution))) {
+        if (
+          !existing.attributions.some((item) =>
+            sameAttribution(item, attribution),
+          )
+        ) {
           existing.attributions.push(attribution);
         }
       }
@@ -508,10 +533,12 @@ function buildMappings(
   }
 
   return [...byTarget.values()]
-    .map((mapping): PlannedFile => ({
-      ...mapping,
-      attributions: mapping.attributions.sort(compareAttribution),
-    }))
+    .map(
+      (mapping): PlannedFile => ({
+        ...mapping,
+        attributions: mapping.attributions.sort(compareAttribution),
+      }),
+    )
     .sort(compareMapping);
 }
 
@@ -575,8 +602,7 @@ function sameAttribution(
   right: OwnershipAttribution,
 ): boolean {
   return (
-    left.harnessId === right.harnessId &&
-    left.placementId === right.placementId
+    left.harnessId === right.harnessId && left.placementId === right.placementId
   );
 }
 

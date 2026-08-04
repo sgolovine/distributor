@@ -19,7 +19,11 @@ const publicTypeIsSchemaInput: Equal<
 > = true;
 
 const documentedConfig = {
-  harnesses: ["codex", "claude-code", "opencode"],
+  harnesses: [
+    { name: "codex" },
+    { name: "claude-code", useHarnessFolder: false },
+    { name: "opencode", useHarnessFolder: true },
+  ],
 } satisfies DistributorConfig;
 
 const customAdapter = {

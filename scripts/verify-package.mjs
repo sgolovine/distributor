@@ -182,7 +182,7 @@ async function verifyTypeConsumer(consumerRoot) {
 
 const config: DistributorConfig = {
   source: ".agents/skills",
-  harnesses: ["codex"],
+  harnesses: [{ name: "codex", useHarnessFolder: true }],
 };
 
 export default config;

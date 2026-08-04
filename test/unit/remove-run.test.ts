@@ -142,7 +142,7 @@ describe("runRemove", () => {
 async function writeConfig(root: string): Promise<void> {
   await writeFile(
     join(root, "distributor.config.json"),
-    '{"harnesses":["claude-code"]}\n',
+    '{"harnesses":[{"name":"claude-code","useHarnessFolder":true}]}\n',
     "utf8",
   );
 }

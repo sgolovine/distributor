@@ -11,11 +11,15 @@ const discovered = {
 };
 
 const options = { homeDirectory: "/home/test", pathStyle: "posix" as const };
+const harness = (name: string, useHarnessFolder = true) => ({
+  name,
+  useHarnessFolder,
+});
 
 describe("validateProjectConfig", () => {
   it("applies the source default and sorts available harnesses", () => {
     const config = validateProjectConfig(
-      { harnesses: ["opencode", "codex", "claude-code"] },
+      { harnesses: [harness("opencode"), harness("codex"), harness("claude-code")] },
       discovered,
       options,
     );
@@ -34,7 +38,7 @@ describe("validateProjectConfig", () => {
 
   it("retains global sync scope", () => {
     const config = validateProjectConfig(
-      { scope: "global", harnesses: ["opencode"] },
+      { scope: "global", harnesses: [harness("opencode")] },
       discovered,
       options,
     );
@@ -43,12 +47,22 @@ describe("validateProjectConfig", () => {
     expect(config.sourceRoot).toBe("/project/.agents/skills");
   });
 
+  it("defaults useHarnessFolder to false", () => {
+    const config = validateProjectConfig(
+      { harnesses: [{ name: "opencode" }] },
+      discovered,
+      options,
+    );
+
+    expect(config.harnesses[0]?.useHarnessFolder).toBe(false);
+  });
+
   it("aggregates duplicate and unknown harness problems", () => {
     expect.assertions(5);
 
     try {
       validateProjectConfig(
-        { harnesses: ["codex", "codex", "invented"] },
+        { harnesses: [harness("codex"), harness("codex"), harness("invented")] },
         discovered,
         options,
       );
@@ -72,6 +86,7 @@ describe("validateProjectConfig", () => {
         harnesses: [
           {
             name: "claude-code",
+            useHarnessFolder: true,
             targets: [{ placement: "user", path: ".custom/claude" }],
           },
         ],
@@ -95,7 +110,7 @@ describe("validateProjectConfig", () => {
     expect(() =>
       validateProjectConfig(
         {
-          harnesses: [{ name: "codex", targets: [{ placement: "admin" }] }],
+          harnesses: [{ name: "codex", useHarnessFolder: true, targets: [{ placement: "admin" }] }],
         },
         discovered,
         options,
@@ -110,6 +125,7 @@ describe("validateProjectConfig", () => {
           harnesses: [
             {
               name: "opencode",
+              useHarnessFolder: true,
               targets: [
                 { placement: "agents-project" },
                 { placement: "project", path: ".agents/skills" },
@@ -135,7 +151,7 @@ describe("validateProjectConfig", () => {
   it("rejects unsupported expansion syntax with field context", () => {
     try {
       validateProjectConfig(
-        { source: "$UNSUPPORTED/skills", harnesses: ["codex"] },
+        { source: "$UNSUPPORTED/skills", harnesses: [harness("codex")] },
         discovered,
         options,
       );
@@ -157,6 +173,7 @@ describe("validateProjectConfig", () => {
           harnesses: [
             {
               name: "codex",
+              useHarnessFolder: true,
               targets: [{ path: ".custom", extra: true }],
             },
           ],

@@ -251,7 +251,9 @@ describe("runSync filesystem guarantees", () => {
       await mkdir(dirname(helperFile), { recursive: true });
       await writeFile(
         join(root, "distributor.config.json"),
-        JSON.stringify({ harnesses: ["claude-code"] }),
+        JSON.stringify({
+          harnesses: [{ name: "claude-code", useHarnessFolder: true }],
+        }),
         "utf8",
       );
       await writeFile(
@@ -301,7 +303,9 @@ describe("runSync filesystem guarantees", () => {
       await mkdir(invalidRoot, { recursive: true });
       await writeFile(
         join(root, "distributor.config.json"),
-        JSON.stringify({ harnesses: ["claude-code"] }),
+        JSON.stringify({
+          harnesses: [{ name: "claude-code", useHarnessFolder: true }],
+        }),
         "utf8",
       );
       await writeFile(
@@ -344,7 +348,9 @@ describe("runSync filesystem guarantees", () => {
       await mkdir(skillRoot, { recursive: true });
       await writeFile(
         join(root, "distributor.config.json"),
-        JSON.stringify({ harnesses: ["claude-code"] }),
+        JSON.stringify({
+          harnesses: [{ name: "claude-code", useHarnessFolder: true }],
+        }),
         "utf8",
       );
       await writeFile(
@@ -386,7 +392,9 @@ describe("runSync filesystem guarantees", () => {
       await mkdir(dirname(ignorePath), { recursive: true });
       await writeFile(
         join(root, "distributor.config.json"),
-        JSON.stringify({ harnesses: ["claude-code"] }),
+        JSON.stringify({
+          harnesses: [{ name: "claude-code", useHarnessFolder: true }],
+        }),
         "utf8",
       );
       await writeFile(
@@ -416,7 +424,9 @@ describe("runSync filesystem guarantees", () => {
       await mkdir(join(root, ".agents", "skills"), { recursive: true });
       await writeFile(
         join(root, "distributor.config.json"),
-        JSON.stringify({ harnesses: ["codex"] }),
+        JSON.stringify({
+          harnesses: [{ name: "codex", useHarnessFolder: true }],
+        }),
         "utf8",
       );
 
@@ -442,7 +452,9 @@ describe("runSync filesystem guarantees", () => {
       await mkdir(skillRoot, { recursive: true });
       await writeFile(
         join(root, "distributor.config.json"),
-        JSON.stringify({ harnesses: ["claude-code"] }),
+        JSON.stringify({
+          harnesses: [{ name: "claude-code", useHarnessFolder: true }],
+        }),
         "utf8",
       );
       await writeFile(
@@ -523,9 +535,9 @@ function orchestrationFixture(): OrchestrationFixture {
       scope: "project",
       sourceRoot,
       harnesses: [
-        { name: "claude-code", targets: undefined },
-        { name: "codex", targets: undefined },
-        { name: "opencode", targets: undefined },
+        { name: "claude-code", useHarnessFolder: false, targets: undefined },
+        { name: "codex", useHarnessFolder: false, targets: undefined },
+        { name: "opencode", useHarnessFolder: false, targets: undefined },
       ],
     },
     skills: {

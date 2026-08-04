@@ -97,6 +97,71 @@ describe("resolvePlacements", () => {
     });
   });
 
+  it("switches compatible harnesses to their own folder and ignores the flag otherwise", () => {
+    const sourceRoot = "/project/source";
+
+    for (const [useHarnessFolder, targetRoot] of [
+      [false, "/project/.agents/skills"],
+      [true, "/project/.opencode/skills"],
+    ] as const) {
+      const result = resolvePlacements(
+        projectConfig("/project", sourceRoot, [
+          automatic("opencode", useHarnessFolder),
+        ]),
+        discovery(sourceRoot, [skill(sourceRoot, "review")]),
+        { pathStyle: "posix" },
+      );
+
+      expect(result.placements[0]?.targetRoot).toBe(targetRoot);
+    }
+
+    for (const useHarnessFolder of [false, true]) {
+      const result = resolvePlacements(
+        projectConfig("/project", sourceRoot, [
+          automatic("claude-code", useHarnessFolder),
+        ]),
+        discovery(sourceRoot, [skill(sourceRoot, "review")]),
+        { pathStyle: "posix" },
+      );
+
+      expect(result.placements[0]?.targetRoot).toBe(
+        "/project/.claude/skills",
+      );
+    }
+  });
+
+  it("switches Codex between shared and harness-specific user folders", () => {
+    const projectRoot = "/project";
+    const sourceRoot = "/project/skills";
+
+    for (const [useHarnessFolder, placementId, targetRoot] of [
+      [false, "agents-user", "/home/dev/.agents/skills"],
+      [true, "user", "/home/dev/.codex/skills"],
+    ] as const) {
+      const result = resolvePlacements(
+        {
+          ...projectConfig(projectRoot, sourceRoot, [
+            automatic("codex", useHarnessFolder),
+          ]),
+          scope: "global",
+        },
+        discovery(sourceRoot, [skill(sourceRoot, "review")]),
+        { pathStyle: "posix", homeDirectory: "/home/dev" },
+      );
+
+      expect(result.placements).toEqual([
+        expect.objectContaining({
+          harnessId: "codex",
+          placement: expect.objectContaining({ id: placementId }),
+          targetRoot,
+        }),
+      ]);
+      expect(result.mappings[0]?.targetPath).toBe(
+        `${targetRoot}/review/SKILL.md`,
+      );
+    }
+  });
+
   it("does not substitute compatible project paths for the default", () => {
     const sourceRoot = "/project/.claude/skills";
     const result = resolvePlacements(
@@ -121,9 +186,9 @@ describe("resolvePlacements", () => {
     const projectRoot = "/project";
     const sourceRoot = "/project/.agents/skills";
     const config = projectConfig(projectRoot, sourceRoot, [
-      automatic("opencode"),
-      automatic("codex"),
-      automatic("claude-code"),
+      automatic("opencode", false),
+      automatic("codex", false),
+      automatic("claude-code", false),
     ]);
     const result = resolvePlacements(
       { ...config, scope: "global" },
@@ -145,7 +210,7 @@ describe("resolvePlacements", () => {
       },
       {
         harnessId: "codex",
-        placementId: "user",
+        placementId: "agents-user",
         targetRoot: "/home/dev/.agents/skills",
       },
       {
@@ -160,7 +225,7 @@ describe("resolvePlacements", () => {
         expect.objectContaining({
           targetPath: "/home/dev/.agents/skills/review/SKILL.md",
           attributions: [
-            { harnessId: "codex", placementId: "user" },
+            { harnessId: "codex", placementId: "agents-user" },
             { harnessId: "opencode", placementId: "agents-user" },
           ],
         }),
@@ -479,7 +544,7 @@ describe("resolvePlacements", () => {
     expect(() =>
       resolvePlacements(
         projectConfig("/project", sourceRoot, [
-          { name: "opencode", targets },
+          { name: "opencode", useHarnessFolder: false, targets },
         ]),
         discovery(sourceRoot, [review]),
         { pathStyle: "posix" },
@@ -553,8 +618,11 @@ function helperFile(
   };
 }
 
-function automatic(name: AvailableAdapterId): ValidatedHarnessSelection {
-  return { name, targets: undefined };
+function automatic(
+  name: AvailableAdapterId,
+  useHarnessFolder = true,
+): ValidatedHarnessSelection {
+  return { name, useHarnessFolder, targets: undefined };
 }
 
 function explicit(
@@ -565,6 +633,7 @@ function explicit(
 ): ValidatedHarnessSelection {
   return {
     name,
+    useHarnessFolder: false,
     targets: [
       {
         placement: selectedPlacement,

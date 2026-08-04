@@ -120,9 +120,12 @@ describe("custom adapter registry", () => {
       const result = await runInit({ cwd: root, yes: true });
       const config = JSON.parse(
         await readFile(result.configPath, "utf8"),
-      ) as { harnesses: string[] };
+      ) as { harnesses: Array<{ name: string; useHarnessFolder: boolean }> };
 
-      expect(config.harnesses.at(-1)).toBe("team-harness");
+      expect(config.harnesses.at(-1)).toEqual({
+        name: "team-harness",
+        useHarnessFolder: true,
+      });
       expect(JSON.parse(await readFile(adapterPath, "utf8"))).toMatchObject({
         name: "team-harness",
       });
@@ -141,7 +144,7 @@ describe("custom adapter registry", () => {
       );
       await writeFile(
         join(root, "distributor.config.json"),
-        '{"source":".agents/skills","harnesses":["team-harness"]}\n',
+        '{"source":".agents/skills","harnesses":[{"name":"team-harness","useHarnessFolder":true}]}\n',
         "utf8",
       );
       const skillPath = join(

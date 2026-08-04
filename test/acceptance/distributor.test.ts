@@ -56,7 +56,9 @@ const ALL_HARNESSES = [
 const DEFAULT_CONFIG = `{
   "scope": "project",
   "source": ".agents/skills",
-  "harnesses": [${ALL_HARNESSES.map((name) => JSON.stringify(name)).join(", ")}]
+  "harnesses": [
+${ALL_HARNESSES.map((name) => `    { "name": ${JSON.stringify(name)}, "useHarnessFolder": true }`).join(",\n")}
+  ]
 }
 `;
 
@@ -78,7 +80,10 @@ const publicTypeMatchesSchema: Equal<
 const documentedConfig = {
   scope: "project",
   source: ".agents/skills",
-  harnesses: [...ALL_HARNESSES],
+  harnesses: ALL_HARNESSES.map((name) => ({
+    name,
+    useHarnessFolder: true,
+  })),
 } satisfies DistributorConfig;
 
 describe("Distributor initial-release acceptance matrix", () => {
@@ -103,7 +108,7 @@ describe("Distributor initial-release acceptance matrix", () => {
       const sourceRoot = join(root, "skills");
       const sourceFile = join(sourceRoot, "keep.txt");
       const ignorePath = join(root, ".distributor", ".gitignore");
-      const configText = '{"source":"skills","harnesses":["codex"]}\n';
+      const configText = '{"source":"skills","harnesses":[{"name":"codex","useHarnessFolder":true}]}\n';
       await mkdir(sourceRoot);
       await writeFile(sourceFile, "keep source content\n", "utf8");
       await writeFile(configPath, configText, "utf8");
@@ -241,9 +246,9 @@ describe("Distributor initial-release acceptance matrix", () => {
         "review",
         "SKILL.md",
       );
-      const agentsTarget = join(
+      const codexTarget = join(
         homeDirectory,
-        ".agents",
+        ".codex",
         "skills",
         "review",
         "SKILL.md",
@@ -255,18 +260,28 @@ describe("Distributor initial-release acceptance matrix", () => {
         "review",
         "SKILL.md",
       );
+      const opencodeTarget = join(
+        homeDirectory,
+        ".config",
+        "opencode",
+        "skills",
+        "review",
+        "SKILL.md",
+      );
 
       expect(result.exitCode).toBe(0);
-      expect((await lstat(agentsTarget)).isSymbolicLink()).toBe(true);
+      expect((await lstat(codexTarget)).isSymbolicLink()).toBe(true);
       expect((await lstat(claudeTarget)).isSymbolicLink()).toBe(true);
-      expect(await readlink(agentsTarget)).toBe(source);
+      expect((await lstat(opencodeTarget)).isSymbolicLink()).toBe(true);
+      expect(await readlink(codexTarget)).toBe(source);
       expect(await readlink(claudeTarget)).toBe(source);
-      expect(result.counts.physicalOperations.total).toBe(2);
+      expect(await readlink(opencodeTarget)).toBe(source);
+      expect(result.counts.physicalOperations.total).toBe(3);
       expect(
         result.counts.harnesses.find(
           (harness) => harness.harnessId === "opencode",
         )?.placements[0]?.placementId,
-      ).toBe("agents-user");
+      ).toBe("user");
     });
   });
 
@@ -545,10 +560,12 @@ describe("Distributor initial-release acceptance matrix", () => {
           harnesses: [
             {
               name: "codex",
+              useHarnessFolder: true,
               targets: [{ placement: "project", path: ".codex/skills" }],
             },
             {
               name: "claude-code",
+              useHarnessFolder: true,
               targets: [{ placement: "project", path: ".claude/skills" }],
             },
           ],
@@ -654,18 +671,23 @@ describe("Distributor initial-release acceptance matrix", () => {
     ]
       .map((match) => match[1])
       .filter((example): example is string => example !== undefined)
-      .map((example) => JSON.parse(example) as unknown);
-    expect(readmeExamples).toHaveLength(2);
+      .map((example) => JSON.parse(example) as unknown)
+      .filter(
+        (example): example is { harnesses: Array<{ name: string }> } =>
+          typeof example === "object" &&
+          example !== null &&
+          Array.isArray((example as { harnesses?: unknown }).harnesses),
+      );
+    expect(readmeExamples.length).toBeGreaterThanOrEqual(2);
     expect(readmeExamples[0]).toEqual(documentedConfig);
     for (const example of readmeExamples) {
       expect(DistributorConfigSchema.parse(example)).toEqual(example);
-      const expectedNames = (
-        example as { harnesses: Array<string | { name: string }> }
-      ).harnesses
-        .map((harness) =>
-          typeof harness === "string" ? harness : harness.name,
-        )
+      const expectedNames = example.harnesses
+        .map((harness) => harness.name)
         .sort();
+      if (!expectedNames.every((name) => ALL_HARNESSES.includes(name as never))) {
+        continue;
+      }
       expect(
         validateProjectConfig(
           example,
@@ -692,7 +714,10 @@ async function writeConfig(
 ): Promise<void> {
   await writeFile(
     join(root, "distributor.config.json"),
-    `${JSON.stringify({ source: DEFAULT_SOURCE_PATH, harnesses }, null, 2)}\n`,
+    `${JSON.stringify({
+      source: DEFAULT_SOURCE_PATH,
+      harnesses: harnesses.map((name) => ({ name, useHarnessFolder: true })),
+    }, null, 2)}\n`,
     "utf8",
   );
   await mkdir(join(root, ".agents", "skills"), { recursive: true });

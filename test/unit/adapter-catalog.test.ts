@@ -10,7 +10,11 @@ import {
 } from "../../src/adapters/index.js";
 
 const expectedAdapters = {
-  codex: ["Codex CLI", ".agents/skills", ["project", "user", "admin"]],
+  codex: [
+    "Codex CLI",
+    ".agents/skills",
+    ["project", "user", "agents-user", "admin"],
+  ],
   "claude-code": ["Claude Code", ".claude/skills", ["project", "user"]],
   opencode: [
     "OpenCode",

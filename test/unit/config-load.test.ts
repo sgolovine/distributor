@@ -8,7 +8,7 @@ import { useFixture } from "../helpers/fixture.js";
 
 const expected = {
   source: ".agents/skills",
-  harnesses: ["codex"],
+  harnesses: [{ name: "codex", useHarnessFolder: true }],
 };
 
 describe("loadSelectedConfig", () => {
@@ -41,7 +41,7 @@ describe("loadSelectedConfig", () => {
       const configPath = join(root, "nested", "distributor.config.ts");
       await writeFile(
         configPath,
-        `const config: { source: string; harnesses: string[] } = ${JSON.stringify(expected)};\nexport default config;\n`,
+        `const config = ${JSON.stringify(expected)};\nexport default config;\n`,
         "utf8",
       );
 

@@ -150,13 +150,18 @@ export async function promptForInitSelections(
 }
 
 function serializeConfig(selections: InitSelections): string {
-  const harnesses = selections.harnesses.map((name) => JSON.stringify(name));
+  const harnesses = selections.harnesses.map(
+    (name) =>
+      `    { "name": ${JSON.stringify(name)}, "useHarnessFolder": true }`,
+  );
 
   return [
     "{",
     `  "scope": ${JSON.stringify(selections.scope)},`,
     `  "source": ${JSON.stringify(selections.source)},`,
-    `  "harnesses": [${harnesses.join(", ")}]`,
+    "  \"harnesses\": [",
+    harnesses.join(",\n"),
+    "  ]",
     "}",
     "",
   ].join("\n");
@@ -304,7 +309,10 @@ async function buildInitPlan(options: RunInitOptions): Promise<InitPlan> {
       {
         scope: selections.scope,
         source: selections.source,
-        harnesses: [...selections.harnesses],
+        harnesses: selections.harnesses.map((name) => ({
+          name,
+          useHarnessFolder: true,
+        })),
       },
       { configPath, projectRoot },
       { ...options, adapterRegistry },

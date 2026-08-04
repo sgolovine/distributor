@@ -215,7 +215,10 @@ describe("runImport", () => {
 async function writeConfig(root: string, source: string): Promise<void> {
   await writeFile(
     join(root, "distributor.config.json"),
-    `${JSON.stringify({ source, harnesses: ["claude-code"] })}\n`,
+    `${JSON.stringify({
+      source,
+      harnesses: [{ name: "claude-code", useHarnessFolder: true }],
+    })}\n`,
     "utf8",
   );
 }

@@ -29,7 +29,9 @@ const ALL_HARNESSES = [
 const DEFAULT_CONFIG_CONTENTS = `{
   "scope": "project",
   "source": ".agents/skills",
-  "harnesses": [${ALL_HARNESSES.map((name) => JSON.stringify(name)).join(", ")}]
+  "harnesses": [
+${ALL_HARNESSES.map((name) => `    { "name": ${JSON.stringify(name)}, "useHarnessFolder": true }`).join(",\n")}
+  ]
 }
 `;
 
@@ -107,7 +109,7 @@ describe("runInit root and config selection", () => {
         await mkdir(nested);
         await writeFile(
           nestedConfig,
-          '{"source":"nested-skills","harnesses":["codex"]}\n',
+          '{"source":"nested-skills","harnesses":[{"name":"codex","useHarnessFolder":true}]}\n',
           "utf8",
         );
 
@@ -116,7 +118,7 @@ describe("runInit root and config selection", () => {
         expect(result.projectRoot).toBe(nested);
         expect(result.configPath).toBe(nestedConfig);
         expect(await readFile(nestedConfig, "utf8")).toBe(
-          '{"source":"nested-skills","harnesses":["codex"]}\n',
+          '{"source":"nested-skills","harnesses":[{"name":"codex","useHarnessFolder":true}]}\n',
         );
         expect(await exists(join(root, "distributor.config.json"))).toBe(false);
       });
@@ -148,7 +150,7 @@ describe("runInit root and config selection", () => {
     await useFixture(async (root) => {
       const configPath = join(root, "distributor.config.json");
       const configContents =
-        '{"source":"custom/skills","harnesses":["codex"]}\n';
+        '{"source":"custom/skills","harnesses":[{"name":"codex","useHarnessFolder":true}]}\n';
       await writeFile(configPath, configContents, "utf8");
       const prompt = vi.fn<InitPrompt>();
 
@@ -176,7 +178,7 @@ describe("runInit root and config selection", () => {
       const configPath = join(root, "distributor.config.json");
       await writeFile(
         configPath,
-        '{"source":"skills","harnesses":["invented"]}\n',
+        '{"source":"skills","harnesses":[{"name":"invented","useHarnessFolder":true}]}\n',
         "utf8",
       );
 
@@ -271,7 +273,10 @@ describe("runInit selection collection", () => {
       expect(await readFile(result.configPath, "utf8")).toBe(`{
   "scope": "global",
   "source": "team-skills",
-  "harnesses": ["claude-code", "codex"]
+  "harnesses": [
+    { "name": "claude-code", "useHarnessFolder": true },
+    { "name": "codex", "useHarnessFolder": true }
+  ]
 }
 `);
       expect((await lstat(join(root, "team-skills"))).isDirectory()).toBe(true);

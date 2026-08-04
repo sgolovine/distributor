@@ -3,33 +3,43 @@ import { describe, expect, it } from "vitest";
 import { DistributorConfigSchema } from "../../src/config/schema.js";
 
 describe("DistributorConfigSchema", () => {
+  const harnesses = [
+    { name: "codex", useHarnessFolder: false },
+    { name: "claude-code", useHarnessFolder: false },
+    { name: "opencode", useHarnessFolder: true },
+  ];
+
   it("accepts the documented default configuration", () => {
     expect(
       DistributorConfigSchema.parse({
         source: ".agents/skills",
-        harnesses: ["codex", "claude-code", "opencode"],
+        harnesses,
       }),
     ).toEqual({
       scope: "project",
       source: ".agents/skills",
-      harnesses: ["codex", "claude-code", "opencode"],
+      harnesses,
     });
   });
 
   it("rejects unknown fields", () => {
     expect(() =>
       DistributorConfigSchema.parse({
-        harnesses: ["codex"],
+        harnesses: [{ name: "codex", useHarnessFolder: false }],
         unexpected: true,
       }),
     ).toThrow();
   });
 
   it("applies the runtime source default", () => {
-    expect(DistributorConfigSchema.parse({ harnesses: ["codex"] })).toEqual({
+    expect(
+      DistributorConfigSchema.parse({
+        harnesses: [{ name: "codex", useHarnessFolder: false }],
+      }),
+    ).toEqual({
       scope: "project",
       source: ".agents/skills",
-      harnesses: ["codex"],
+      harnesses: [{ name: "codex", useHarnessFolder: false }],
     });
   });
 
@@ -37,8 +47,19 @@ describe("DistributorConfigSchema", () => {
     expect(
       DistributorConfigSchema.parse({
         scope: "global",
-        harnesses: ["opencode"],
+        harnesses: [{ name: "opencode", useHarnessFolder: true }],
       }).scope,
     ).toBe("global");
+  });
+
+  it("rejects legacy string harness entries and defaults the folder policy", () => {
+    expect(() =>
+      DistributorConfigSchema.parse({ harnesses: ["codex"] }),
+    ).toThrow();
+    expect(
+      DistributorConfigSchema.parse({ harnesses: [{ name: "codex" }] }),
+    ).toMatchObject({
+      harnesses: [{ name: "codex", useHarnessFolder: false }],
+    });
   });
 });
