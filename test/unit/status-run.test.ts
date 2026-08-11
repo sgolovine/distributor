@@ -161,15 +161,9 @@ describe("status", () => {
       await writeConfig(root);
       await writeSkill(root, "alpha");
       await runSync({ cwd: root });
-      const target = join(
-        root,
-        ".claude",
-        "skills",
-        "alpha",
-        "SKILL.md",
-      );
+      const target = join(root, ".claude", "skills", "alpha");
       await rm(target);
-      await symlink("changed-after-sync", target, "file");
+      await symlink("changed-after-sync", target, "dir");
 
       await expect(runStatus({ cwd: root })).resolves.toMatchObject({
         exitCode: 0,

@@ -55,10 +55,11 @@ Each non-hidden directory immediately under the source root that contains a
 regular file named exactly `SKILL.md` is a skill. Skills with invalid
 frontmatter or unsafe entries are skipped and reported as warnings by `status`
 and `sync`; other valid skills continue to load. Other non-hidden files and
-directories are helper content and are preserved at the same relative paths as
-independent file links. The optional
-`agents/openai.yaml` (or `agents/openai.yml`) is emitted only to Codex targets
-and omitted from Claude, Cline, and every other non-Codex target.
+directories are helper content and are preserved at the same relative paths.
+Each top-level skill or helper directory is linked as one directory; a
+top-level helper file is linked as a file. Because skill directories are linked
+intact, optional content such as `agents/openai.yaml` (or `agents/openai.yml`)
+remains visible through every linked skill folder.
 
 ## Command details
 
@@ -298,12 +299,11 @@ distributor sync --dry-run
 distributor sync
 ```
 
-The resulting target file is
-`/work/my-app/.team-agent/skills/code-review/SKILL.md`, a symbolic link to
-`/work/my-app/.agents/skills/code-review/SKILL.md`. Distributor creates the
-corresponding directories and links each regular source file, including helper
-files; it does not replace the target root or entire skill directory with one
-link.
+The resulting target directory is
+`/work/my-app/.team-agent/skills/code-review`, a symbolic link to
+`/work/my-app/.agents/skills/code-review`. Distributor links each top-level
+skill or helper directory as a unit and does not replace the harness's entire
+skills root.
 
 A new project can instead create the adapter first and run `distributor init`
 or `distributor init --yes`. Available custom adapters are included during
@@ -595,5 +595,5 @@ link value Distributor recorded.
 All sixteen harnesses in the configuration specification are available. This
 release intentionally has no force mode, copy or junction fallback, automatic
 cleanup during sync, transforms, generated artifacts, or content/frontmatter
-rewriting. Distributor creates direct file symlinks and never directory
-symlinks.
+rewriting. Distributor creates direct directory symlinks for skill and helper
+folders, and file symlinks only for top-level helper files.

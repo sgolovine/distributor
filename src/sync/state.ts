@@ -23,6 +23,7 @@ export interface ManagedStateEntry {
   readonly sourcePath: string;
   readonly targetPath: string;
   readonly linkValue: string;
+  readonly linkType?: "file" | "directory";
   readonly attributions: readonly OwnershipAttribution[];
 }
 
@@ -58,8 +59,7 @@ export interface StatePersistenceResult {
   readonly warnings: readonly PlanNotice[];
 }
 
-const STATE_IGNORE_CONTENTS =
-  "*\n!.gitignore\n!adapters/\n!adapters/**\n";
+const STATE_IGNORE_CONTENTS = "*\n!.gitignore\n!adapters/\n!adapters/**\n";
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -80,10 +80,14 @@ export function compareStateEntries(
   right: ManagedStateEntry,
 ): number {
   return (
-    compareText(pathComparisonKey(left.targetPath), pathComparisonKey(right.targetPath)) ||
+    compareText(
+      pathComparisonKey(left.targetPath),
+      pathComparisonKey(right.targetPath),
+    ) ||
     compareText(left.targetPath, right.targetPath) ||
     compareText(left.sourcePath, right.sourcePath) ||
-    compareText(left.linkValue, right.linkValue)
+    compareText(left.linkValue, right.linkValue) ||
+    compareText(left.linkType ?? "file", right.linkType ?? "file")
   );
 }
 
@@ -94,7 +98,9 @@ export function statePathForProject(projectRoot: string): string {
 function issuePath(path: readonly PropertyKey[]): string {
   return path
     .map((part, index) =>
-      typeof part === "number" ? `[${part}]` : `${index === 0 ? "" : "."}${String(part)}`,
+      typeof part === "number"
+        ? `[${part}]`
+        : `${index === 0 ? "" : "."}${String(part)}`,
     )
     .join("");
 }
@@ -126,7 +132,8 @@ function parseStateText(text: string, statePath: string): unknown {
           path: statePath,
           message: error instanceof Error ? error.message : String(error),
           expected: "valid Distributor managed state JSON",
-          correction: "Do not let Distributor discard corrupt state automatically.",
+          correction:
+            "Do not let Distributor discard corrupt state automatically.",
         },
       ],
       error,
@@ -148,7 +155,8 @@ function validateParsedState(
         path: issuePath(issue.path),
         message: issue.message,
         expected: "managed state schema version 1",
-        correction: "Review the state schema before changing or removing this file.",
+        correction:
+          "Review the state schema before changing or removing this file.",
       })),
     );
   }
@@ -170,7 +178,8 @@ function validateParsedState(
           message: "stored source path is not in canonical normalized form",
           received: entry.sourcePath,
           expected: serializeStatePath(sourcePath, projectRoot),
-          correction: "Review the state path instead of allowing automatic repair.",
+          correction:
+            "Review the state path instead of allowing automatic repair.",
         });
       }
     } catch (error) {
@@ -191,7 +200,8 @@ function validateParsedState(
           message: "stored target path is not in canonical normalized form",
           received: entry.targetPath,
           expected: serializeStatePath(targetPath, projectRoot),
-          correction: "Review the state path instead of allowing automatic repair.",
+          correction:
+            "Review the state path instead of allowing automatic repair.",
         });
       }
     } catch (error) {
@@ -215,7 +225,8 @@ function validateParsedState(
           message: "duplicates a harness/placement attribution",
           received: attribution,
           expected: "unique ownership attributions",
-          correction: "Remove only the duplicate attribution after reviewing the state.",
+          correction:
+            "Remove only the duplicate attribution after reviewing the state.",
         });
       }
       seenAttributions.add(key);
@@ -230,7 +241,8 @@ function validateParsedState(
           message: `duplicates the normalized target in entries[${priorIndex}]`,
           received: entry.targetPath,
           expected: "one managed-state entry per target",
-          correction: "Resolve the duplicate without changing target files automatically.",
+          correction:
+            "Resolve the duplicate without changing target files automatically.",
         });
       } else {
         seenTargets.set(targetKey, entryIndex);
@@ -242,12 +254,16 @@ function validateParsedState(
         sourcePath,
         targetPath,
         linkValue: entry.linkValue,
+        ...(entry.linkType === undefined ? {} : { linkType: entry.linkType }),
         attributions,
       });
     }
   }
 
-  for (const [directoryIndex, storedDirectory] of parsed.data.directories.entries()) {
+  for (const [
+    directoryIndex,
+    storedDirectory,
+  ] of parsed.data.directories.entries()) {
     try {
       const directory = deserializeStatePath(storedDirectory, projectRoot);
       const canonicalDirectory = serializeStatePath(directory, projectRoot);
@@ -257,7 +273,8 @@ function validateParsedState(
           message: "stored directory path is not in canonical normalized form",
           received: storedDirectory,
           expected: canonicalDirectory,
-          correction: "Review the state path instead of allowing automatic repair.",
+          correction:
+            "Review the state path instead of allowing automatic repair.",
         });
       }
 
@@ -269,7 +286,8 @@ function validateParsedState(
           message: `duplicates the normalized directory in directories[${priorIndex}]`,
           received: storedDirectory,
           expected: "unique managed directory paths",
-          correction: "Remove only the duplicate directory after reviewing the state.",
+          correction:
+            "Remove only the duplicate directory after reviewing the state.",
         });
       } else {
         seenDirectories.set(key, directoryIndex);
@@ -282,7 +300,8 @@ function validateParsedState(
         message: failure.message,
         received: storedDirectory,
         expected: "a canonical project-relative or external absolute path",
-        correction: failure.correction ?? "Use a canonical stored directory path.",
+        correction:
+          failure.correction ?? "Use a canonical stored directory path.",
       });
     }
   }
@@ -323,12 +342,17 @@ export async function loadManagedState(
         warnings: [],
       };
     }
-    throw new DistributorError("state", `Could not inspect managed state directory: ${stateDirectory}`, {
-      operation: "load managed state",
-      context: { stateDirectory },
-      correction: "Fix the state-directory permissions and rerun Distributor.",
-      cause: error,
-    });
+    throw new DistributorError(
+      "state",
+      `Could not inspect managed state directory: ${stateDirectory}`,
+      {
+        operation: "load managed state",
+        context: { stateDirectory },
+        correction:
+          "Fix the state-directory permissions and rerun Distributor.",
+        cause: error,
+      },
+    );
   }
 
   if (!directoryStats.isDirectory()) {
@@ -360,12 +384,16 @@ export async function loadManagedState(
         warnings,
       };
     }
-    throw new DistributorError("state", `Could not inspect managed state: ${path}`, {
-      operation: "load managed state",
-      context: { statePath: path },
-      correction: "Fix the state-file permissions and rerun Distributor.",
-      cause: error,
-    });
+    throw new DistributorError(
+      "state",
+      `Could not inspect managed state: ${path}`,
+      {
+        operation: "load managed state",
+        context: { statePath: path },
+        correction: "Fix the state-file permissions and rerun Distributor.",
+        cause: error,
+      },
+    );
   }
 
   if (!stateStats.isFile()) {
@@ -385,15 +413,23 @@ export async function loadManagedState(
   try {
     originalText = await readFile(path, "utf8");
   } catch (error) {
-    throw new DistributorError("state", `Could not read managed state: ${path}`, {
-      operation: "load managed state",
-      context: { statePath: path },
-      correction: "Fix the state-file permissions and rerun Distributor.",
-      cause: error,
-    });
+    throw new DistributorError(
+      "state",
+      `Could not read managed state: ${path}`,
+      {
+        operation: "load managed state",
+        context: { statePath: path },
+        correction: "Fix the state-file permissions and rerun Distributor.",
+        cause: error,
+      },
+    );
   }
 
-  const state = validateParsedState(parseStateText(originalText, path), projectRoot, path);
+  const state = validateParsedState(
+    parseStateText(originalText, path),
+    projectRoot,
+    path,
+  );
   return { ...state, path, exists: true, originalText, warnings };
 }
 
@@ -405,10 +441,13 @@ export function serializeManagedState(
     sourcePath: serializeStatePath(entry.sourcePath, projectRoot),
     targetPath: serializeStatePath(entry.targetPath, projectRoot),
     linkValue: entry.linkValue,
-    attributions: [...entry.attributions].sort(compareAttributions).map((item) => ({
-      harnessId: item.harnessId,
-      placementId: item.placementId,
-    })),
+    ...(entry.linkType === undefined ? {} : { linkType: entry.linkType }),
+    attributions: [...entry.attributions]
+      .sort(compareAttributions)
+      .map((item) => ({
+        harnessId: item.harnessId,
+        placementId: item.placementId,
+      })),
   }));
   const directories = [...(state.directories ?? [])]
     .sort(compareText)
@@ -423,7 +462,9 @@ function isEntryInScope(
 ): boolean {
   return (
     harnessId === undefined ||
-    entry.attributions.some((attribution) => attribution.harnessId === harnessId)
+    entry.attributions.some(
+      (attribution) => attribution.harnessId === harnessId,
+    )
   );
 }
 
@@ -507,7 +548,8 @@ async function ensureRealStateDirectory(path: string): Promise<void> {
         {
           operation: "persist managed state",
           context: { stateDirectory: path },
-          correction: "Fix the state-directory permissions and rerun Distributor.",
+          correction:
+            "Fix the state-directory permissions and rerun Distributor.",
           cause: error,
         },
       );
@@ -649,7 +691,10 @@ async function inspectExistingStateIgnore(
 export async function inspectManagedStateIgnore(
   projectRoot: string,
 ): Promise<readonly PlanNotice[]> {
-  const ignorePath = join(dirname(statePathForProject(projectRoot)), ".gitignore");
+  const ignorePath = join(
+    dirname(statePathForProject(projectRoot)),
+    ".gitignore",
+  );
   return (await inspectExistingStateIgnore(ignorePath)) ?? [];
 }
 
@@ -676,7 +721,8 @@ async function ensureStateIgnore(
         {
           operation: "persist managed state",
           context: { ignorePath },
-          correction: "Fix the state-directory permissions and rerun Distributor.",
+          correction:
+            "Fix the state-directory permissions and rerun Distributor.",
           cause: error,
         },
       );
@@ -715,11 +761,16 @@ export async function persistManagedState(
 
   const expectedPath = statePathForProject(projectRoot);
   if (loaded.path !== expectedPath) {
-    throw new DistributorError("state", "Managed state path is not canonical.", {
-      operation: "persist managed state",
-      context: { statePath: loaded.path, expectedPath },
-      correction: "Reload state from the canonical project-local path before writing.",
-    });
+    throw new DistributorError(
+      "state",
+      "Managed state path is not canonical.",
+      {
+        operation: "persist managed state",
+        context: { statePath: loaded.path, expectedPath },
+        correction:
+          "Reload state from the canonical project-local path before writing.",
+      },
+    );
   }
 
   const stateDirectory = dirname(expectedPath);

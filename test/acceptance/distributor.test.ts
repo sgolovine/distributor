@@ -1,8 +1,8 @@
 import {
   lstat,
   mkdir,
-  readFile,
   readdir,
+  readFile,
   readlink,
   rm,
   symlink,
@@ -16,7 +16,7 @@ import {
   adapterCatalog,
   availableAdapterConfigs,
 } from "../../src/adapters/index.js";
-import { runCli, type CliRuntime } from "../../src/cli.js";
+import { type CliRuntime, runCli } from "../../src/cli.js";
 import {
   DEFAULT_SOURCE_PATH,
   DistributorConfigSchema,
@@ -27,11 +27,8 @@ import type { DistributorConfig } from "../../src/index.js";
 import { runInit } from "../../src/init/run-init.js";
 import { createOutput } from "../../src/output.js";
 import { applySyncPlan } from "../../src/sync/apply.js";
-import { runSync, type RunSyncResult } from "../../src/sync/run-sync.js";
-import {
-  loadManagedState,
-  statePathForProject,
-} from "../../src/sync/state.js";
+import { type RunSyncResult, runSync } from "../../src/sync/run-sync.js";
+import { loadManagedState, statePathForProject } from "../../src/sync/state.js";
 import { useFixture } from "../helpers/fixture.js";
 
 const ALL_HARNESSES = [
@@ -62,8 +59,7 @@ ${ALL_HARNESSES.map((name) => `    { "name": ${JSON.stringify(name)}, "useHarnes
 }
 `;
 
-const DEFAULT_IGNORE =
-  "*\n!.gitignore\n!adapters/\n!adapters/**\n";
+const DEFAULT_IGNORE = "*\n!.gitignore\n!adapters/\n!adapters/**\n";
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <
@@ -108,7 +104,8 @@ describe("Distributor initial-release acceptance matrix", () => {
       const sourceRoot = join(root, "skills");
       const sourceFile = join(sourceRoot, "keep.txt");
       const ignorePath = join(root, ".distributor", ".gitignore");
-      const configText = '{"source":"skills","harnesses":[{"name":"codex","useHarnessFolder":true}]}\n';
+      const configText =
+        '{"source":"skills","harnesses":[{"name":"codex","useHarnessFolder":true}]}\n';
       await mkdir(sourceRoot);
       await writeFile(sourceFile, "keep source content\n", "utf8");
       await writeFile(configPath, configText, "utf8");
@@ -152,7 +149,7 @@ describe("Distributor initial-release acceptance matrix", () => {
     });
   });
 
-  it("criterion 3: a multi-file skill produces nested Claude file symlinks with exact raw values", async () => {
+  it("criterion 3: a multi-file skill produces one Claude directory symlink with an exact raw value", async () => {
     await useFixture(async (root) => {
       await runInit({ cwd: root, yes: true });
       await writeSkill(root, "review", {
@@ -163,26 +160,15 @@ describe("Distributor initial-release acceptance matrix", () => {
       const result = await runSync({ cwd: root });
       const sourceRoot = join(root, ".agents", "skills", "review");
       const targetRoot = join(root, ".claude", "skills", "review");
-      const expectedFiles = [
-        "SKILL.md",
-        "references/checklist.md",
-        "scripts/check.sh",
-      ];
-
       expect(result.exitCode).toBe(0);
       expect(result.counts.source).toEqual({ skills: 1, files: 3 });
-      for (const file of expectedFiles) {
-        const sourcePath = join(sourceRoot, file);
-        const targetPath = join(targetRoot, file);
-        expect((await lstat(targetPath)).isSymbolicLink()).toBe(true);
-        expect(await readlink(targetPath)).toBe(
-          relative(dirname(targetPath), sourcePath),
-        );
-      }
-      expect((await lstat(targetRoot)).isDirectory()).toBe(true);
-      expect((await lstat(join(targetRoot, "references"))).isDirectory()).toBe(
-        true,
+      expect((await lstat(targetRoot)).isSymbolicLink()).toBe(true);
+      expect(await readlink(targetRoot)).toBe(
+        relative(dirname(targetRoot), sourceRoot),
       );
+      expect(
+        (await lstat(join(targetRoot, "references", "checklist.md"))).isFile(),
+      ).toBe(true);
     });
   });
 
@@ -213,9 +199,7 @@ describe("Distributor initial-release acceptance matrix", () => {
       ).toBe(1);
       expect(
         (
-          await lstat(
-            join(root, ".opencode", "skills", "review", "SKILL.md"),
-          )
+          await lstat(join(root, ".opencode", "skills", "review"))
         ).isSymbolicLink(),
       ).toBe(true);
       expect(await exists(join(root, ".codex"))).toBe(false);
@@ -239,34 +223,15 @@ describe("Distributor initial-release acceptance matrix", () => {
       await writeSkill(projectRoot, "review");
 
       const result = await runSync({ cwd: projectRoot, homeDirectory });
-      const source = join(
-        projectRoot,
-        ".agents",
-        "skills",
-        "review",
-        "SKILL.md",
-      );
-      const codexTarget = join(
-        homeDirectory,
-        ".codex",
-        "skills",
-        "review",
-        "SKILL.md",
-      );
-      const claudeTarget = join(
-        homeDirectory,
-        ".claude",
-        "skills",
-        "review",
-        "SKILL.md",
-      );
+      const source = join(projectRoot, ".agents", "skills", "review");
+      const codexTarget = join(homeDirectory, ".codex", "skills", "review");
+      const claudeTarget = join(homeDirectory, ".claude", "skills", "review");
       const opencodeTarget = join(
         homeDirectory,
         ".config",
         "opencode",
         "skills",
         "review",
-        "SKILL.md",
       );
 
       expect(result.exitCode).toBe(0);
@@ -292,7 +257,7 @@ describe("Distributor initial-release acceptance matrix", () => {
         "references/checklist.md": "# Checklist\n",
       });
       await runSync({ cwd: root });
-      const target = join(root, ".claude", "skills", "review", "SKILL.md");
+      const target = join(root, ".claude", "skills", "review");
       const targetBefore = await linkIdentity(target);
       const stateBefore = await readFile(statePathForProject(root), "utf8");
 
@@ -311,7 +276,7 @@ describe("Distributor initial-release acceptance matrix", () => {
         create: 0,
         update: 0,
         adopt: 0,
-        skip: 24,
+        skip: 12,
       });
       expect(third.counts).toEqual(second.counts);
       expect(renderSync(third)).toBe(renderSync(second));
@@ -332,21 +297,15 @@ describe("Distributor initial-release acceptance matrix", () => {
       await useFixture(async (root) => {
         await runInit({ cwd: root, yes: true });
         await writeSkill(root, "alpha");
-        const alphaTarget = join(
-          root,
-          ".claude",
-          "skills",
-          "alpha",
-          "SKILL.md",
-        );
-        const betaTarget = join(root, ".claude", "skills", "beta", "SKILL.md");
+        const alphaTarget = join(root, ".claude", "skills", "alpha");
+        const betaTarget = join(root, ".claude", "skills", "beta");
         let stateBefore: string | undefined;
 
         if (scenario === "changed-link") {
           await runSync({ cwd: root });
           stateBefore = await readFile(statePathForProject(root), "utf8");
           await rm(alphaTarget);
-          await symlink("changed-after-sync", alphaTarget, "file");
+          await symlink("changed-after-sync", alphaTarget, "dir");
           await writeSkill(root, "beta");
         } else {
           await writeSkill(root, "beta");
@@ -357,7 +316,7 @@ describe("Distributor initial-release acceptance matrix", () => {
             await mkdir(alphaTarget, { recursive: true });
           } else {
             const outside = join(root, "outside");
-            await mkdir(join(root, ".claude", "skills"), { recursive: true });
+            await mkdir(join(root, ".claude"), { recursive: true });
             await mkdir(outside);
             await symlink(outside, dirname(alphaTarget), "dir");
           }
@@ -452,7 +411,9 @@ describe("Distributor initial-release acceptance matrix", () => {
         code: "ENOENT",
       });
       await expect(lstat(target)).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(lstat(targetSkill)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(targetSkill)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
       await expect(loadManagedState(root)).resolves.toMatchObject({
         entries: expect.not.arrayContaining([
           expect.objectContaining({
@@ -551,25 +512,29 @@ describe("Distributor initial-release acceptance matrix", () => {
     });
   });
 
-  it("links OpenAI metadata only to Codex and removes every managed file link", async () => {
+  it("links complete skill folders and removes every managed directory link", async () => {
     await useFixture(async (root) => {
       await writeFile(
         join(root, "distributor.config.json"),
-        `${JSON.stringify({
-          source: ".source/skills",
-          harnesses: [
-            {
-              name: "codex",
-              useHarnessFolder: true,
-              targets: [{ placement: "project", path: ".codex/skills" }],
-            },
-            {
-              name: "claude-code",
-              useHarnessFolder: true,
-              targets: [{ placement: "project", path: ".claude/skills" }],
-            },
-          ],
-        }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            source: ".source/skills",
+            harnesses: [
+              {
+                name: "codex",
+                useHarnessFolder: true,
+                targets: [{ placement: "project", path: ".codex/skills" }],
+              },
+              {
+                name: "claude-code",
+                useHarnessFolder: true,
+                targets: [{ placement: "project", path: ".claude/skills" }],
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
         "utf8",
       );
       const skillRoot = join(root, ".source", "skills", "review");
@@ -590,22 +555,22 @@ describe("Distributor initial-release acceptance matrix", () => {
       const claudeSkill = join(root, ".claude", "skills", "review");
 
       expect(sync.exitCode).toBe(0);
-      expect((await lstat(join(codexSkill, "SKILL.md"))).isSymbolicLink()).toBe(true);
-      expect(
-        (await lstat(join(codexSkill, "agents", "openai.yaml"))).isSymbolicLink(),
-      ).toBe(true);
-      expect((await lstat(join(claudeSkill, "SKILL.md"))).isSymbolicLink()).toBe(true);
-      expect(await exists(join(claudeSkill, "agents", "openai.yaml"))).toBe(false);
+      expect((await lstat(codexSkill)).isSymbolicLink()).toBe(true);
+      expect((await lstat(claudeSkill)).isSymbolicLink()).toBe(true);
+      expect(await exists(join(codexSkill, "agents", "openai.yaml"))).toBe(
+        true,
+      );
+      expect(await exists(join(claudeSkill, "agents", "openai.yaml"))).toBe(
+        true,
+      );
 
       const removal = await runCliAt(root, ["remove"]);
 
       expect(removal).toMatchObject({ code: 0, stderr: "" });
-      expect(removal.stdout).toContain("Removed 3 managed links");
-      expect(await exists(join(codexSkill, "SKILL.md"))).toBe(false);
-      expect(await exists(join(codexSkill, "agents", "openai.yaml"))).toBe(false);
-      expect(await exists(join(claudeSkill, "SKILL.md"))).toBe(false);
-      expect(await exists(join(skillRoot, "agents", "openai.yaml"))).toBe(true);
+      expect(removal.stdout).toContain("Removed 2 managed links");
       expect(await exists(codexSkill)).toBe(false);
+      expect(await exists(claudeSkill)).toBe(false);
+      expect(await exists(join(skillRoot, "agents", "openai.yaml"))).toBe(true);
       await expect(loadManagedState(root)).resolves.toMatchObject({
         entries: [],
         directories: [],
@@ -685,7 +650,9 @@ describe("Distributor initial-release acceptance matrix", () => {
       const expectedNames = example.harnesses
         .map((harness) => harness.name)
         .sort();
-      if (!expectedNames.every((name) => ALL_HARNESSES.includes(name as never))) {
+      if (
+        !expectedNames.every((name) => ALL_HARNESSES.includes(name as never))
+      ) {
         continue;
       }
       expect(
@@ -714,10 +681,14 @@ async function writeConfig(
 ): Promise<void> {
   await writeFile(
     join(root, "distributor.config.json"),
-    `${JSON.stringify({
-      source: DEFAULT_SOURCE_PATH,
-      harnesses: harnesses.map((name) => ({ name, useHarnessFolder: true })),
-    }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        source: DEFAULT_SOURCE_PATH,
+        harnesses: harnesses.map((name) => ({ name, useHarnessFolder: true })),
+      },
+      null,
+      2,
+    )}\n`,
     "utf8",
   );
   await mkdir(join(root, ".agents", "skills"), { recursive: true });

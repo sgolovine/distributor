@@ -1,5 +1,5 @@
 import type { Stats } from "node:fs";
-import { lstat, readlink, realpath } from "node:fs/promises";
+import { lstat, readdir, readlink, realpath } from "node:fs/promises";
 import {
   basename,
   dirname,
@@ -30,9 +30,9 @@ import {
 } from "./state.js";
 import type {
   OwnershipAttribution,
-  PlannedFile,
   PlanFailure,
   PlanNotice,
+  PlannedFile,
   PlanOperation,
   SyncPlan,
 } from "./types.js";
@@ -74,10 +74,7 @@ export async function buildSyncPlan(
   state: ManagedState,
   options: BuildSyncPlanOptions = {},
 ): Promise<ReadOnlySyncPlan> {
-  await inspectSourceRoot(
-    resolution.sourceRoot,
-    resolution.sourceRootIdentity,
-  );
+  await inspectSourceRoot(resolution.sourceRoot, resolution.sourceRootIdentity);
   const stateEvaluation = await evaluateManagedState(
     state,
     options.harnessId,
@@ -120,13 +117,27 @@ export async function buildSyncPlan(
     const stateResult = evaluationByTarget.get(
       pathComparisonKey(mapping.targetPath),
     );
-    const classification = classifyDesiredTarget(
+    const replacesLegacyTree = await canReplaceLegacyManagedTree(
       mapping,
       target,
-      stateEntry,
-      stateResult,
-      options.harnessId,
+      state,
+      stateEvaluation,
     );
+    const classification: Classification = replacesLegacyTree
+      ? {
+          operation: {
+            ...mapping,
+            kind: "create",
+            replaceManagedDirectory: true,
+          },
+        }
+      : classifyDesiredTarget(
+          mapping,
+          target,
+          stateEntry,
+          stateResult,
+          options.harnessId,
+        );
     const reasons = [...parentProblems];
 
     if (classification.problem !== undefined) {
@@ -177,6 +188,84 @@ export async function buildSyncPlan(
     sourceRootIdentity: resolution.sourceRootIdentity,
     stateEvaluation,
   };
+}
+
+async function canReplaceLegacyManagedTree(
+  mapping: PlannedFile,
+  target: TargetInspection,
+  state: ManagedState,
+  evaluation: StateEvaluation,
+): Promise<boolean> {
+  if (
+    mapping.linkType !== "directory" ||
+    target.kind !== "other" ||
+    target.description !== "a directory" ||
+    !(state.directories ?? []).some((directory) =>
+      pathsAreEquivalent(directory, mapping.targetPath),
+    )
+  ) {
+    return false;
+  }
+
+  const ownedTargets = new Set(
+    evaluation.evaluated
+      .filter(
+        (result) =>
+          result.status === "owned" &&
+          isStrictChildPath(mapping.targetPath, result.entry.targetPath),
+      )
+      .map((result) => pathComparisonKey(result.entry.targetPath)),
+  );
+  const recordedChildren = state.entries.filter((entry) =>
+    isStrictChildPath(mapping.targetPath, entry.targetPath),
+  );
+  if (
+    recordedChildren.some(
+      (entry) => !ownedTargets.has(pathComparisonKey(entry.targetPath)),
+    )
+  ) {
+    return false;
+  }
+
+  const managedDirectories = new Set(
+    (state.directories ?? []).map((directory) => pathComparisonKey(directory)),
+  );
+  return legacyTreeIsFullyManaged(
+    mapping.targetPath,
+    ownedTargets,
+    managedDirectories,
+  );
+}
+
+async function legacyTreeIsFullyManaged(
+  directory: string,
+  ownedTargets: ReadonlySet<string>,
+  managedDirectories: ReadonlySet<string>,
+): Promise<boolean> {
+  try {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        if (!ownedTargets.has(pathComparisonKey(path))) return false;
+        continue;
+      }
+      if (
+        !entry.isDirectory() ||
+        !managedDirectories.has(pathComparisonKey(path)) ||
+        !(await legacyTreeIsFullyManaged(
+          path,
+          ownedTargets,
+          managedDirectories,
+        ))
+      ) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function inspectSourceRoot(
@@ -591,7 +680,8 @@ function classifyRecordedTarget(
       );
     const preservesRecordedMapping =
       pathsAreEquivalent(stateEntry.sourcePath, mapping.sourcePath) &&
-      stateEntry.linkValue === mapping.linkValue;
+      stateEntry.linkValue === mapping.linkValue &&
+      (stateEntry.linkType ?? "file") === (mapping.linkType ?? "file");
 
     if (
       harnessId === undefined ||
@@ -625,6 +715,7 @@ function classifyRecordedTarget(
 
   const mappingIsCorrect =
     pathsAreEquivalent(stateEntry.sourcePath, mapping.sourcePath) &&
+    (stateEntry.linkType ?? "file") === (mapping.linkType ?? "file") &&
     linkResolvesTo(target.linkValue, mapping.targetPath, mapping.sourcePath);
   if (mappingIsCorrect) {
     return {
@@ -775,6 +866,7 @@ function staleOperation(
     sourcePath: entry.sourcePath,
     targetPath: entry.targetPath,
     linkValue: entry.linkValue,
+    ...(entry.linkType === undefined ? {} : { linkType: entry.linkType }),
     attributions:
       harnessId === undefined
         ? entry.attributions
@@ -912,8 +1004,14 @@ function comparePlannedFiles(left: PlannedFile, right: PlannedFile): number {
   const leftAttribution = [...left.attributions].sort(compareAttributions)[0];
   const rightAttribution = [...right.attributions].sort(compareAttributions)[0];
   return (
-    compareText(leftAttribution?.harnessId ?? "", rightAttribution?.harnessId ?? "") ||
-    compareText(leftAttribution?.placementId ?? "", rightAttribution?.placementId ?? "") ||
+    compareText(
+      leftAttribution?.harnessId ?? "",
+      rightAttribution?.harnessId ?? "",
+    ) ||
+    compareText(
+      leftAttribution?.placementId ?? "",
+      rightAttribution?.placementId ?? "",
+    ) ||
     compareText(left.skillName, right.skillName) ||
     compareText(left.targetPath, right.targetPath) ||
     compareText(left.sourcePath, right.sourcePath)
@@ -921,10 +1019,9 @@ function comparePlannedFiles(left: PlannedFile, right: PlannedFile): number {
 }
 
 function compareOperations(left: PlanOperation, right: PlanOperation): number {
-  return (
-    comparePlannedFiles(left, right) ||
-    compareText(left.kind, right.kind)
-  );
+  if (isStrictChildPath(right.targetPath, left.targetPath)) return -1;
+  if (isStrictChildPath(left.targetPath, right.targetPath)) return 1;
+  return comparePlannedFiles(left, right) || compareText(left.kind, right.kind);
 }
 
 function compareNotices(left: PlanNotice, right: PlanNotice): number {
@@ -941,7 +1038,8 @@ function compareParentProblems(
   right: ParentProblem,
 ): number {
   return (
-    compareText(left.path, right.path) || compareText(left.message, right.message)
+    compareText(left.path, right.path) ||
+    compareText(left.message, right.message)
   );
 }
 

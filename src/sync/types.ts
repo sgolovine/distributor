@@ -16,6 +16,10 @@ export interface PlannedFile {
   readonly sourcePath: string;
   readonly targetPath: string;
   readonly linkValue: string;
+  /** Omitted by legacy callers and state entries, where it means a file link. */
+  readonly linkType?: "file" | "directory";
+  /** Internal transition marker for replacing a fully managed legacy file tree. */
+  readonly replaceManagedDirectory?: boolean;
   readonly attributions: readonly OwnershipAttribution[];
 }
 

@@ -33,10 +33,10 @@ import type {
 import {
   compareAttributions,
   compareStateEntries,
-  persistManagedState,
   type LoadedManagedState,
   type ManagedState,
   type ManagedStateEntry,
+  persistManagedState,
 } from "./state.js";
 import type {
   OwnershipAttribution,
@@ -54,7 +54,7 @@ export interface ApplyFilesystem {
   readonly symlink: (
     target: string,
     path: string,
-    type: "file",
+    type: "file" | "dir",
   ) => Promise<void>;
   readonly unlink: (path: string) => Promise<void>;
 }
@@ -172,7 +172,8 @@ export async function applySyncPlan(
       "Cannot apply a sync plan that contains planning conflicts.",
       {
         operation: "apply sync plan",
-        correction: "Resolve every planning conflict and build a new plan before applying.",
+        correction:
+          "Resolve every planning conflict and build a new plan before applying.",
       },
     );
   }
@@ -183,13 +184,12 @@ export async function applySyncPlan(
   };
   const platform = options.platform ?? process.platform;
   const priorByTarget = new Map(
-    loadedState.entries.map((entry) => [pathComparisonKey(entry.targetPath), entry]),
+    loadedState.entries.map((entry) => [
+      pathComparisonKey(entry.targetPath),
+      entry,
+    ]),
   );
-  const nextEntries = initialStateEntries(
-    loadedState,
-    plan,
-    options.harnessId,
-  );
+  const nextEntries = initialStateEntries(loadedState, plan, options.harnessId);
   const operationResults: ApplyOperationResult[] = [];
   const failures: ApplyFailure[] = [];
   const reservedPhysicalTargets = new Map<string, string>();
@@ -241,9 +241,7 @@ export async function applySyncPlan(
       );
       const failure = operationFailure(operation, error);
       const targetLinkMutated =
-        error instanceof OperationFailure
-          ? error.targetLinkMutated
-          : false;
+        error instanceof OperationFailure ? error.targetLinkMutated : false;
       failures.push(failure);
       operationResults.push({
         operation,
@@ -365,7 +363,6 @@ async function restoreRemovedDirectories(
       await filesystem.mkdir(directory.path);
     } catch (error) {
       if (errorCode(error) !== "EEXIST") {
-        continue;
       }
     }
   }
@@ -565,7 +562,7 @@ async function rollbackRemovedManagedLink(
     await filesystem.symlink(
       priorEntry.linkValue,
       operation.targetPath,
-      "file",
+      symlinkType(priorEntry),
     );
   } catch (error) {
     throw symlinkFailure(operation.targetPath, error, platform, true);
@@ -582,19 +579,17 @@ async function rollbackManagedMutation(
   filesystem: ApplyFilesystem,
   platform: NodeJS.Platform,
 ): Promise<void> {
-  await prepareAndRevalidateParents(
-    operation,
-    placements,
-    false,
-    filesystem,
-  );
+  await prepareAndRevalidateParents(operation, placements, false, filesystem);
   await requirePhysicalRollbackTarget(
     operation,
     expectedPhysicalTarget,
     filesystem,
   );
   const current = await inspectTarget(operation.targetPath, filesystem);
-  if (current.kind === "symlink" && current.linkValue === priorEntry.linkValue) {
+  if (
+    current.kind === "symlink" &&
+    current.linkValue === priorEntry.linkValue
+  ) {
     return;
   }
   if (current.kind !== "symlink" || current.linkValue !== operation.linkValue) {
@@ -630,12 +625,7 @@ async function rollbackManagedMutation(
     return;
   }
 
-  await prepareAndRevalidateParents(
-    operation,
-    placements,
-    false,
-    filesystem,
-  );
+  await prepareAndRevalidateParents(operation, placements, false, filesystem);
   await requirePhysicalRollbackTarget(
     operation,
     expectedPhysicalTarget,
@@ -646,14 +636,17 @@ async function rollbackManagedMutation(
     await filesystem.symlink(
       priorEntry.linkValue,
       operation.targetPath,
-      "file",
+      symlinkType(priorEntry),
     );
   } catch (error) {
     throw symlinkFailure(operation.targetPath, error, platform, true);
   }
 
   const restored = await inspectTarget(operation.targetPath, filesystem);
-  if (restored.kind !== "symlink" || restored.linkValue !== priorEntry.linkValue) {
+  if (
+    restored.kind !== "symlink" ||
+    restored.linkValue !== priorEntry.linkValue
+  ) {
     throw new OperationFailure(
       "target",
       `Prior managed link could not be verified after rollback: ${operation.targetPath}`,
@@ -758,11 +751,7 @@ async function applyOperation(
     if (!staleRemovesTarget(priorEntry, harnessId)) {
       return "stale";
     }
-    await reservePhysicalTarget(
-      operation,
-      reservedPhysicalTargets,
-      filesystem,
-    );
+    await reservePhysicalTarget(operation, reservedPhysicalTargets, filesystem);
     try {
       await filesystem.unlink(operation.targetPath);
     } catch (error) {
@@ -816,11 +805,32 @@ async function applyOperation(
     filesystem,
     managedDirectories,
   );
-  await reservePhysicalTarget(
-    operation,
-    reservedPhysicalTargets,
-    filesystem,
-  );
+  await reservePhysicalTarget(operation, reservedPhysicalTargets, filesystem);
+
+  if (
+    operation.kind === "create" &&
+    operation.replaceManagedDirectory === true
+  ) {
+    const directoryKey = pathComparisonKey(operation.targetPath);
+    if (!managedDirectories.has(directoryKey)) {
+      throw new OperationFailure(
+        "target",
+        `Legacy target directory is no longer recorded as managed: ${operation.targetPath}`,
+        "Review the target directory and rebuild the sync plan.",
+      );
+    }
+    try {
+      await filesystem.rmdir(operation.targetPath);
+      managedDirectories.delete(directoryKey);
+    } catch (error) {
+      throw new OperationFailure(
+        "target",
+        `Could not replace the legacy managed file tree: ${operation.targetPath}`,
+        "Remove unmanaged content from the directory and rerun sync.",
+        { cause: error },
+      );
+    }
+  }
 
   switch (operation.kind) {
     case "create":
@@ -889,7 +899,9 @@ async function requireRegularSource(
   const sourceParent = dirname(operation.sourcePath);
   const relativeParent = relative(sourceRoot, sourceParent);
   let currentParent = sourceRoot;
-  for (const segment of relativeParent === "" ? [] : relativeParent.split(sep)) {
+  for (const segment of relativeParent === ""
+    ? []
+    : relativeParent.split(sep)) {
     currentParent = resolve(currentParent, segment);
     let parentStats: Stats;
     try {
@@ -925,14 +937,15 @@ async function requireRegularSource(
     );
   }
 
-  if (!stats.isFile()) {
+  const expectsDirectory = operation.linkType === "directory";
+  if (expectsDirectory ? !stats.isDirectory() : !stats.isFile()) {
     const nodeType = stats.isSymbolicLink()
       ? "a symbolic link"
       : describeNode(stats);
     throw new OperationFailure(
       "target",
-      `Source file changed after planning and is now ${nodeType}: ${operation.sourcePath}`,
-      "Restore a regular source file; Distributor will not link through source symlinks.",
+      `Source ${expectsDirectory ? "directory" : "file"} changed after planning and is now ${nodeType}: ${operation.sourcePath}`,
+      `Restore a regular source ${expectsDirectory ? "directory" : "file"}; Distributor will not link through source symlinks.`,
     );
   }
   if (!isStrictChildPath(expectedSourceRoot.realPath, physicalSource)) {
@@ -971,7 +984,7 @@ async function createTarget(
     await filesystem.symlink(
       operation.linkValue,
       operation.targetPath,
-      "file",
+      symlinkType(operation),
     );
   } catch (error) {
     throw symlinkFailure(operation.targetPath, error, platform, false);
@@ -1013,7 +1026,7 @@ async function updateTarget(
     await filesystem.symlink(
       operation.linkValue,
       operation.targetPath,
-      "file",
+      symlinkType(operation),
     );
   } catch (error) {
     throw symlinkFailure(operation.targetPath, error, platform, true);
@@ -1173,6 +1186,9 @@ function recordSuccessfulOperation(
     sourcePath: operation.sourcePath,
     targetPath: operation.targetPath,
     linkValue: operation.linkValue,
+    ...(operation.linkType === undefined
+      ? {}
+      : { linkType: operation.linkType }),
     attributions,
   });
 }
@@ -1199,9 +1215,7 @@ function mergeAttributions(
     harnessId === undefined
       ? desired
       : [
-          ...prior.filter(
-            (attribution) => attribution.harnessId !== harnessId,
-          ),
+          ...prior.filter((attribution) => attribution.harnessId !== harnessId),
           ...desired,
         ];
   return [
@@ -1345,10 +1359,7 @@ async function parentChains(
     const inspection = absoluteLink
       ? await absoluteInspectionRoot(placement.targetRoot, filesystem)
       : {
-          path: commonAncestor(
-            operation.sourcePath,
-            placement.targetRoot,
-          ),
+          path: commonAncestor(operation.sourcePath, placement.targetRoot),
           verifyCanonical: false,
         };
     const chain = {
@@ -1489,7 +1500,9 @@ function pathsInChain(inspectionRoot: string, targetParent: string): string[] {
 
   const paths = [inspectionRoot];
   let current = inspectionRoot;
-  for (const segment of relativeParent === "" ? [] : relativeParent.split(sep)) {
+  for (const segment of relativeParent === ""
+    ? []
+    : relativeParent.split(sep)) {
     current = resolve(current, segment);
     paths.push(current);
   }
@@ -1647,13 +1660,19 @@ function symlinkFailure(
   return new OperationFailure(
     "target",
     privilegeFailure
-      ? `Windows could not create a file symbolic link at ${targetPath}.`
-      : `Could not create file symbolic link at ${targetPath}: ${errorMessage(error)}`,
+      ? `Windows could not create a symbolic link at ${targetPath}.`
+      : `Could not create symbolic link at ${targetPath}: ${errorMessage(error)}`,
     privilegeFailure
       ? "Enable Windows Developer Mode or grant symbolic-link privileges, then rerun sync. Distributor will not copy files or create junctions."
       : "Fix the target permissions and rerun sync; Distributor will not copy files or create junctions.",
     { cause: error, targetLinkMutated },
   );
+}
+
+function symlinkType(value: {
+  readonly linkType?: "file" | "directory";
+}): "file" | "dir" {
+  return value.linkType === "directory" ? "dir" : "file";
 }
 
 function operationFailure(

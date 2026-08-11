@@ -63,6 +63,7 @@ interface MutableMapping {
   sourcePath: string;
   targetPath: string;
   linkValue: string;
+  linkType: "file" | "directory";
   attributions: OwnershipAttribution[];
 }
 
@@ -411,48 +412,31 @@ function buildMappings(
   pathApi: typeof posix,
 ): PlannedFile[] {
   const byTarget = new Map<string, MutableMapping>();
-  const sources = sourceEntries(discoveredSkills, helperFiles).sort(
+  const sources = sourceEntries(discoveredSkills, helperFiles, pathApi).sort(
     (left, right) => compareText(left.name, right.name),
   );
-  const openAiMetadataPaths = new Set([
-    pathApi.join("agents", "openai.yaml"),
-    pathApi.join("agents", "openai.yml"),
-  ]);
-
   for (const placement of placements) {
     for (const source of sources) {
-      const files = [...source.files].sort((left, right) =>
-        compareText(left.sourceRelativePath, right.sourceRelativePath),
-      );
-
-      for (const file of files) {
-        if (
-          placement.harnessId !== "codex" &&
-          file.skillRelativePath !== undefined &&
-          openAiMetadataPaths.has(file.skillRelativePath)
-        ) {
-          continue;
-        }
-
-        const sourcePath = normalizeAbsolutePath(file.absolutePath, style);
+      {
+        const sourcePath = normalizeAbsolutePath(source.absolutePath, style);
         const expectedSourcePath = pathApi.resolve(
           sourceRoot,
-          file.sourceRelativePath,
+          source.sourceRelativePath,
         );
         if (
-          pathApi.isAbsolute(file.sourceRelativePath) ||
+          pathApi.isAbsolute(source.sourceRelativePath) ||
           !isStrictChildPath(sourceRoot, sourcePath, style) ||
           !pathsAreEquivalent(expectedSourcePath, sourcePath, style)
         ) {
           throw mappingConflict(
-            `Source file mapping escapes or disagrees with the source root: ${file.absolutePath}.`,
-            { sourcePath: file.absolutePath, sourceRoot },
-            "Keep every discovered file strictly inside the configured source root.",
+            `Source entry mapping escapes or disagrees with the source root: ${source.absolutePath}.`,
+            { sourcePath: source.absolutePath, sourceRoot },
+            "Keep every discovered entry strictly inside the configured source root.",
           );
         }
 
         const targetPath = normalizeAbsolutePath(
-          pathApi.resolve(placement.targetRoot, file.sourceRelativePath),
+          pathApi.resolve(placement.targetRoot, source.sourceRelativePath),
           style,
         );
         if (!isStrictChildPath(placement.targetRoot, targetPath, style)) {
@@ -464,6 +448,7 @@ function buildMappings(
         }
         if (
           pathsAreEquivalent(targetPath, sourcePath, style) ||
+          pathsAreEquivalent(targetPath, sourceRoot, style) ||
           isStrictChildPath(sourceRoot, targetPath, style)
         ) {
           throw mappingConflict(
@@ -491,6 +476,7 @@ function buildMappings(
             sourcePath,
             targetPath,
             linkValue,
+            linkType: source.linkType,
             attributions: [attribution],
           });
           continue;
@@ -498,7 +484,7 @@ function buildMappings(
 
         if (!pathsAreEquivalent(existing.sourcePath, sourcePath, style)) {
           throw mappingConflict(
-            `Target ${targetPath} maps to different source files.`,
+            `Target ${targetPath} maps to different source entries.`,
             {
               targetPath,
               sourcePath,
@@ -509,7 +495,8 @@ function buildMappings(
         if (
           existing.sourcePath !== sourcePath ||
           existing.skillName !== source.name ||
-          existing.linkValue !== linkValue
+          existing.linkValue !== linkValue ||
+          existing.linkType !== source.linkType
         ) {
           throw mappingConflict(
             `Normalized path keys collide unsafely at target ${targetPath}.`,
@@ -532,7 +519,7 @@ function buildMappings(
     }
   }
 
-  return [...byTarget.values()]
+  const mappings = [...byTarget.values()]
     .map(
       (mapping): PlannedFile => ({
         ...mapping,
@@ -540,38 +527,89 @@ function buildMappings(
       }),
     )
     .sort(compareMapping);
-}
 
-interface MappableSourceFile {
-  readonly absolutePath: string;
-  readonly sourceRelativePath: string;
-  readonly skillRelativePath?: string;
+  for (let leftIndex = 0; leftIndex < mappings.length; leftIndex += 1) {
+    const left = mappings[leftIndex];
+    if (left === undefined) continue;
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < mappings.length;
+      rightIndex += 1
+    ) {
+      const right = mappings[rightIndex];
+      if (right === undefined) continue;
+      if (
+        isStrictChildPath(left.targetPath, right.targetPath, style) ||
+        isStrictChildPath(right.targetPath, left.targetPath, style)
+      ) {
+        throw mappingConflict(
+          `Target entries overlap unsafely: ${left.targetPath} and ${right.targetPath}.`,
+          {
+            leftTargetPath: left.targetPath,
+            rightTargetPath: right.targetPath,
+          },
+          "Choose target roots that do not place one linked source entry inside another.",
+        );
+      }
+    }
+  }
+
+  return mappings;
 }
 
 interface MappableSource {
   readonly name: string;
-  readonly files: MappableSourceFile[];
+  readonly absolutePath: string;
+  readonly sourceRelativePath: string;
+  readonly linkType: "file" | "directory";
 }
 
 function sourceEntries(
   discoveredSkills: readonly SourceSkill[],
   helperFiles: readonly SourceHelperFile[],
+  pathApi: typeof posix,
 ): MappableSource[] {
   const sources: MappableSource[] = discoveredSkills.map((skill) => ({
     name: skill.name,
-    files: [...skill.files],
+    absolutePath: skill.directoryPath,
+    sourceRelativePath: skill.name,
+    linkType: "directory",
   }));
 
   for (const file of helperFiles) {
     const source = sources.find((item) => item.name === file.helperName);
-    if (source === undefined) {
-      sources.push({ name: file.helperName, files: [file] });
-    } else {
-      source.files.push(file);
+    if (source !== undefined) {
+      continue;
     }
+    const isRootFile = file.sourceRelativePath === file.helperName;
+    sources.push({
+      name: file.helperName,
+      absolutePath: isRootFile
+        ? file.absolutePath
+        : topLevelSourcePath(
+            file.absolutePath,
+            file.sourceRelativePath,
+            pathApi,
+          ),
+      sourceRelativePath: file.helperName,
+      linkType: isRootFile ? "file" : "directory",
+    });
   }
 
   return sources;
+}
+
+function topLevelSourcePath(
+  absolutePath: string,
+  sourceRelativePath: string,
+  pathApi: typeof posix,
+): string {
+  let result = absolutePath;
+  const nestedSegments = sourceRelativePath.split(pathApi.sep).length - 1;
+  for (let index = 0; index < nestedSegments; index += 1) {
+    result = pathApi.dirname(result);
+  }
+  return result;
 }
 
 function mappingConflict(

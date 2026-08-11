@@ -3,8 +3,8 @@ import { posix, win32 } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  getAvailableAdapterConfig,
   type AvailableAdapterId,
+  getAvailableAdapterConfig,
   type HarnessPlacement,
 } from "../../src/adapters/index.js";
 import type {
@@ -55,14 +55,11 @@ describe("resolvePlacements", () => {
       }),
     ]);
     expect(result.mappings.map((mapping) => mapping.targetPath)).toEqual([
-      "/project/.claude/skills/review/SKILL.md",
-      "/project/.claude/skills/review/references/a.md",
-      "/project/.opencode/skills/review/SKILL.md",
-      "/project/.opencode/skills/review/references/a.md",
+      "/project/.claude/skills/review",
+      "/project/.opencode/skills/review",
     ]);
-    expect(result.mappings[0]?.linkValue).toBe(
-      "../../../.agents/skills/review/SKILL.md",
-    );
+    expect(result.mappings[0]?.linkValue).toBe("../../.agents/skills/review");
+    expect(result.mappings[0]?.linkType).toBe("directory");
     expect(result.sourceRootIdentity).toEqual({
       realPath: sourceRoot,
       device: 1,
@@ -86,14 +83,15 @@ describe("resolvePlacements", () => {
     );
 
     expect(result.mappings.map((mapping) => mapping.targetPath)).toEqual([
-      "/project/.claude/skills/_bqe-core-reference/schema.json",
-      "/project/.claude/skills/review/SKILL.md",
+      "/project/.claude/skills/_bqe-core-reference",
+      "/project/.claude/skills/review",
       "/project/.claude/skills/shared.md",
     ]);
     expect(result.mappings[0]).toMatchObject({
       skillName: "_bqe-core-reference",
-      sourcePath: "/project/.agents/skills/_bqe-core-reference/schema.json",
-      linkValue: "../../../.agents/skills/_bqe-core-reference/schema.json",
+      sourcePath: "/project/.agents/skills/_bqe-core-reference",
+      linkValue: "../../.agents/skills/_bqe-core-reference",
+      linkType: "directory",
     });
   });
 
@@ -124,9 +122,7 @@ describe("resolvePlacements", () => {
         { pathStyle: "posix" },
       );
 
-      expect(result.placements[0]?.targetRoot).toBe(
-        "/project/.claude/skills",
-      );
+      expect(result.placements[0]?.targetRoot).toBe("/project/.claude/skills");
     }
   });
 
@@ -156,9 +152,7 @@ describe("resolvePlacements", () => {
           targetRoot,
         }),
       ]);
-      expect(result.mappings[0]?.targetPath).toBe(
-        `${targetRoot}/review/SKILL.md`,
-      );
+      expect(result.mappings[0]?.targetPath).toBe(`${targetRoot}/review`);
     }
   });
 
@@ -178,7 +172,7 @@ describe("resolvePlacements", () => {
       }),
     ]);
     expect(result.mappings[0]?.targetPath).toBe(
-      "/project/.opencode/skills/review/SKILL.md",
+      "/project/.opencode/skills/review",
     );
   });
 
@@ -223,14 +217,14 @@ describe("resolvePlacements", () => {
     expect(result.mappings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          targetPath: "/home/dev/.agents/skills/review/SKILL.md",
+          targetPath: "/home/dev/.agents/skills/review",
           attributions: [
             { harnessId: "codex", placementId: "agents-user" },
             { harnessId: "opencode", placementId: "agents-user" },
           ],
         }),
         expect.objectContaining({
-          targetPath: "/home/dev/.claude/skills/review/SKILL.md",
+          targetPath: "/home/dev/.claude/skills/review",
         }),
       ]),
     );
@@ -317,25 +311,14 @@ describe("resolvePlacements", () => {
       { pathStyle: "posix" },
     );
 
-    const openAiConfigMappings = result.mappings.filter(
-      (mapping) =>
-        mapping.sourcePath.endsWith("/agents/openai.yaml") ||
-        mapping.sourcePath.endsWith("/agents/openai.yml"),
-    );
-
-    expect(openAiConfigMappings).toEqual([
-      expect.objectContaining({
-        sourcePath: "/project/source/review/agents/openai.yaml",
-        attributions: [{ harnessId: "codex", placementId: "project" }],
-      }),
-      expect.objectContaining({
-        sourcePath: "/project/source/review/agents/openai.yml",
-        attributions: [{ harnessId: "codex", placementId: "project" }],
-      }),
-    ]);
-    expect(result.mappings.filter((mapping) =>
-      mapping.sourcePath.endsWith("/SKILL.md"),
-    )).toHaveLength(6);
+    expect(result.mappings).toHaveLength(6);
+    expect(
+      result.mappings.every(
+        (mapping) =>
+          mapping.sourcePath === "/project/source/review" &&
+          mapping.linkType === "directory",
+      ),
+    ).toBe(true);
   });
 
   it("filters to one enabled harness and rejects invalid selections", () => {
@@ -455,9 +438,7 @@ describe("resolvePlacements", () => {
         path: "/home/dev/.claude/skills",
       }),
     ]);
-    expect(result.mappings[0]?.linkValue).toBe(
-      "/project/source/review/SKILL.md",
-    );
+    expect(result.mappings[0]?.linkValue).toBe("/project/source/review");
   });
 
   it("uses absolute links without an external-target warning for an external source", () => {
@@ -469,9 +450,7 @@ describe("resolvePlacements", () => {
     );
 
     expect(result.warnings).toEqual([]);
-    expect(result.mappings[0]?.linkValue).toBe(
-      "/shared/source/review/SKILL.md",
-    );
+    expect(result.mappings[0]?.linkValue).toBe("/shared/source/review");
   });
 
   it("rejects a target file that would land back inside the source tree", () => {
@@ -524,10 +503,7 @@ describe("resolvePlacements", () => {
 
   it("rejects different sources colliding at one target", () => {
     const sourceRoot = "/project/source";
-    const review = skill(sourceRoot, "review", [
-      "SKILL.md",
-      "review/SKILL.md",
-    ]);
+    const review = skill(sourceRoot, "review", ["SKILL.md", "review/SKILL.md"]);
     const targets = [
       {
         placement: placement("opencode", "project"),
@@ -549,28 +525,33 @@ describe("resolvePlacements", () => {
         discovery(sourceRoot, [review]),
         { pathStyle: "posix" },
       ),
-    ).toThrow("maps to different source files");
+    ).toThrow("overlap unsafely");
   });
 
-  it("rejects case-colliding source files with Windows semantics", () => {
+  it("links a Windows skill directory as one entry", () => {
     const projectRoot = "C:\\project";
     const sourceRoot = "C:\\project\\source";
     const review = windowsSkill(sourceRoot, "review", ["Foo.md", "foo.md"]);
 
-    expect(() =>
-      resolvePlacements(
-        projectConfig(projectRoot, sourceRoot, [
-          explicit(
-            "claude-code",
-            placement("claude-code", "project"),
-            "C:\\project\\out",
-            true,
-          ),
-        ]),
-        discovery(sourceRoot, [review]),
-        { pathStyle: "win32" },
-      ),
-    ).toThrow("collide unsafely");
+    const result = resolvePlacements(
+      projectConfig(projectRoot, sourceRoot, [
+        explicit(
+          "claude-code",
+          placement("claude-code", "project"),
+          "C:\\project\\out",
+          true,
+        ),
+      ]),
+      discovery(sourceRoot, [review]),
+      { pathStyle: "win32" },
+    );
+    expect(result.mappings).toEqual([
+      expect.objectContaining({
+        sourcePath: "C:\\project\\source\\review",
+        targetPath: "C:\\project\\out\\review",
+        linkType: "directory",
+      }),
+    ]);
   });
 });
 

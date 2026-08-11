@@ -12,6 +12,7 @@ export const StateEntrySchema = z
     sourcePath: z.string().min(1),
     targetPath: z.string().min(1),
     linkValue: z.string().min(1),
+    linkType: z.enum(["file", "directory"]).optional(),
     attributions: z.array(StateAttributionSchema).min(1),
   })
   .strict();
@@ -24,8 +25,6 @@ export const ManagedStateSchema = z
   })
   .strict();
 
-export type SerializedStateAttribution = z.infer<
-  typeof StateAttributionSchema
->;
+export type SerializedStateAttribution = z.infer<typeof StateAttributionSchema>;
 export type SerializedStateEntry = z.infer<typeof StateEntrySchema>;
 export type SerializedManagedState = z.infer<typeof ManagedStateSchema>;

@@ -2,9 +2,10 @@ import {
   access,
   lstat,
   mkdir,
-  readFile,
   readdir,
+  readFile,
   readlink,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -16,16 +17,10 @@ import type { DiscoveredConfig } from "../../src/config/discover.js";
 import type { ValidatedProjectConfig } from "../../src/config/validate.js";
 import { DistributorError } from "../../src/errors.js";
 import type { SkillDiscoveryResult } from "../../src/skills/discover.js";
-import type {
-  ApplyFailure,
-  ApplySyncResult,
-} from "../../src/sync/apply.js";
+import type { ApplyFailure, ApplySyncResult } from "../../src/sync/apply.js";
 import type { ReadOnlySyncPlan } from "../../src/sync/plan.js";
 import type { PlacementResolution } from "../../src/sync/resolve-placements.js";
-import {
-  runSync,
-  type RunSyncRuntime,
-} from "../../src/sync/run-sync.js";
+import { type RunSyncRuntime, runSync } from "../../src/sync/run-sync.js";
 import type { LoadedManagedState } from "../../src/sync/state.js";
 import type { PlannedFile, PlanOperation } from "../../src/sync/types.js";
 import { useFixture } from "../helpers/fixture.js";
@@ -76,9 +71,7 @@ describe("runSync orchestration", () => {
       satisfiedPlacements: ["project"],
     });
     expect(
-      result.counts.harnesses.find(
-        (item) => item.harnessId === "claude-code",
-      ),
+      result.counts.harnesses.find((item) => item.harnessId === "claude-code"),
     ).toMatchObject({ operations: { total: 1, create: 1 }, warnings: 1 });
     expect(
       result.counts.harnesses.find((item) => item.harnessId === "opencode"),
@@ -159,7 +152,10 @@ describe("runSync orchestration", () => {
     const fixture = orchestrationFixture();
     const second = secondMapping(fixture.mapping);
     const firstOperation = fixture.plan.operations[0]!;
-    const secondOperation = { ...second, kind: "create" } satisfies PlanOperation;
+    const secondOperation = {
+      ...second,
+      kind: "create",
+    } satisfies PlanOperation;
     fixture.resolution = {
       ...fixture.resolution,
       mappings: [fixture.mapping, second],
@@ -274,7 +270,6 @@ describe("runSync filesystem guarantees", () => {
         ".claude",
         "skills",
         "_bqe-core-reference",
-        "schema.json",
       );
       const rootFileTarget = join(root, ".claude", "skills", "shared.md");
 
@@ -286,11 +281,73 @@ describe("runSync filesystem guarantees", () => {
       expect((await lstat(helperTarget)).isSymbolicLink()).toBe(true);
       expect((await lstat(rootFileTarget)).isSymbolicLink()).toBe(true);
       expect(await readlink(helperTarget)).toBe(
-        relative(dirname(helperTarget), helperFile),
+        relative(dirname(helperTarget), dirname(helperFile)),
       );
       expect(await readlink(rootFileTarget)).toBe(
         relative(dirname(rootFileTarget), join(sourceRoot, "shared.md")),
       );
+    });
+  });
+
+  it("migrates a fully managed legacy file tree to one directory link", async () => {
+    await useFixture(async (root) => {
+      const sourceRoot = join(root, ".agents", "skills");
+      const skillRoot = join(sourceRoot, "review");
+      const targetRoot = join(root, ".claude", "skills", "review");
+      const sourceFile = join(skillRoot, "SKILL.md");
+      const targetFile = join(targetRoot, "SKILL.md");
+      const linkValue = relative(dirname(targetFile), sourceFile);
+      await mkdir(skillRoot, { recursive: true });
+      await mkdir(targetRoot, { recursive: true });
+      await mkdir(join(root, ".distributor"), { recursive: true });
+      await writeFile(
+        join(root, "distributor.config.json"),
+        JSON.stringify({
+          harnesses: [{ name: "claude-code", useHarnessFolder: true }],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        sourceFile,
+        "---\nname: review\ndescription: Review code.\n---\n",
+        "utf8",
+      );
+      await symlink(linkValue, targetFile, "file");
+      await writeFile(
+        join(root, ".distributor", "state.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            entries: [
+              {
+                sourcePath: ".agents/skills/review/SKILL.md",
+                targetPath: ".claude/skills/review/SKILL.md",
+                linkValue,
+                attributions: [
+                  { harnessId: "claude-code", placementId: "project" },
+                ],
+              },
+            ],
+            directories: [".claude", ".claude/skills", ".claude/skills/review"],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+
+      const result = await runSync({ cwd: root });
+
+      expect(result.failures).toEqual([]);
+      expect(result.exitCode).toBe(0);
+      expect((await lstat(targetRoot)).isSymbolicLink()).toBe(true);
+      expect(await readlink(targetRoot)).toBe(
+        relative(dirname(targetRoot), skillRoot),
+      );
+      expect(result.counts.physicalOperations).toMatchObject({
+        create: 1,
+        stale: 1,
+      });
     });
   });
 
@@ -330,9 +387,9 @@ describe("runSync filesystem guarantees", () => {
         }),
       ]);
       expect(
-        (await lstat(
-          join(root, ".claude", "skills", "review", "SKILL.md"),
-        )).isSymbolicLink(),
+        (
+          await lstat(join(root, ".claude", "skills", "review"))
+        ).isSymbolicLink(),
       ).toBe(true);
       await expect(
         access(join(root, ".claude", "skills", "broken")),
@@ -344,7 +401,7 @@ describe("runSync filesystem guarantees", () => {
     await useFixture(async (root) => {
       const skillRoot = join(root, ".agents", "skills", "review");
       const skillFile = join(skillRoot, "SKILL.md");
-      const target = join(root, ".claude", "skills", "review", "SKILL.md");
+      const target = join(root, ".claude", "skills", "review");
       await mkdir(skillRoot, { recursive: true });
       await writeFile(
         join(root, "distributor.config.json"),
@@ -602,9 +659,7 @@ function orchestrationFixture(): OrchestrationFixture {
       stateEvaluation: { evaluated: [], untouched: [] },
     },
     applyResult: {
-      operations: [
-        { operation, status: "created", targetLinkMutated: true },
-      ],
+      operations: [{ operation, status: "created", targetLinkMutated: true }],
       failures: [],
       warnings: [planWarning],
       nextState: { version: 1, entries: [] },

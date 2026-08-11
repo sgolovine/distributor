@@ -50,19 +50,14 @@ describe("custom adapter registry", () => {
       );
 
       const registry = await loadAdapterRegistry(root);
-      const customNames = registry.catalog
-        .slice(-3)
-        .map((entry) => entry.name);
+      const customNames = registry.catalog.slice(-3).map((entry) => entry.name);
 
       expect(customNames).toEqual([
         "json-harness",
         "javascript-harness",
         "typescript-harness",
       ]);
-      const jsonAdapter = getRegistryAvailableConfig(
-        registry,
-        "json-harness",
-      );
+      const jsonAdapter = getRegistryAvailableConfig(registry, "json-harness");
       expect(jsonAdapter).toMatchObject({
         defaultProjectPlacementId: "project",
       });
@@ -118,9 +113,9 @@ describe("custom adapter registry", () => {
       );
 
       const result = await runInit({ cwd: root, yes: true });
-      const config = JSON.parse(
-        await readFile(result.configPath, "utf8"),
-      ) as { harnesses: Array<{ name: string; useHarnessFolder: boolean }> };
+      const config = JSON.parse(await readFile(result.configPath, "utf8")) as {
+        harnesses: Array<{ name: string; useHarnessFolder: boolean }>;
+      };
 
       expect(config.harnesses.at(-1)).toEqual({
         name: "team-harness",
@@ -147,13 +142,7 @@ describe("custom adapter registry", () => {
         '{"source":".agents/skills","harnesses":[{"name":"team-harness","useHarnessFolder":true}]}\n',
         "utf8",
       );
-      const skillPath = join(
-        root,
-        ".agents",
-        "skills",
-        "review",
-        "SKILL.md",
-      );
+      const skillPath = join(root, ".agents", "skills", "review", "SKILL.md");
       await mkdir(dirname(skillPath), { recursive: true });
       await writeFile(
         skillPath,
@@ -168,7 +157,8 @@ describe("custom adapter registry", () => {
       ]);
       expect(result.plan.operations).toEqual([
         expect.objectContaining({
-          targetPath: join(root, ".team", "skills", "review", "SKILL.md"),
+          targetPath: join(root, ".team", "skills", "review"),
+          linkType: "directory",
           kind: "create",
         }),
       ]);
