@@ -416,7 +416,7 @@ describe("resolvePlacements", () => {
     ).toThrow("inside source root");
   });
 
-  it("warns and uses absolute links for an external target", () => {
+  it("uses absolute links without warning for an external target", () => {
     const sourceRoot = "/project/source";
     const result = resolvePlacements(
       projectConfig("/project", sourceRoot, [
@@ -431,17 +431,11 @@ describe("resolvePlacements", () => {
       { pathStyle: "posix" },
     );
 
-    expect(result.warnings).toEqual([
-      expect.objectContaining({
-        harnessId: "claude-code",
-        placementId: "user",
-        path: "/home/dev/.claude/skills",
-      }),
-    ]);
+    expect(result.warnings).toEqual([]);
     expect(result.mappings[0]?.linkValue).toBe("/project/source/review");
   });
 
-  it("uses absolute links without an external-target warning for an external source", () => {
+  it("uses absolute links for an external source", () => {
     const sourceRoot = "/shared/source";
     const result = resolvePlacements(
       projectConfig("/project", sourceRoot, [automatic("claude-code")]),

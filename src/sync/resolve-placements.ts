@@ -184,11 +184,9 @@ export function resolvePlacements(
           hasPathOverride: false,
         },
         sourceRoot,
-        projectRoot,
         style,
         placements,
         satisfiedPlacements,
-        warnings,
       );
       continue;
     }
@@ -202,18 +200,15 @@ export function resolvePlacements(
       addPlacement(
         resolvedExplicitPlacement(harness.name, target, style),
         sourceRoot,
-        projectRoot,
         style,
         placements,
         satisfiedPlacements,
-        warnings,
       );
     }
   }
 
   placements.sort(comparePlacement);
   satisfiedPlacements.sort(compareSatisfiedPlacement);
-  warnings.sort(compareNotice);
 
   return {
     sourceRoot,
@@ -353,11 +348,9 @@ function resolvedExplicitPlacement(
 function addPlacement(
   resolved: ResolvedTargetPlacement,
   sourceRoot: string,
-  projectRoot: string,
   style: PathStyle,
   placements: ResolvedTargetPlacement[],
   satisfiedPlacements: SatisfiedPlacement[],
-  warnings: PlanNotice[],
 ): void {
   if (pathsAreEquivalent(resolved.targetRoot, sourceRoot, style)) {
     satisfiedPlacements.push({
@@ -387,19 +380,6 @@ function addPlacement(
   }
 
   placements.push(resolved);
-
-  if (
-    isProjectLocal(sourceRoot, projectRoot, style) &&
-    !isProjectLocal(resolved.targetRoot, projectRoot, style)
-  ) {
-    warnings.push({
-      harnessId: resolved.harnessId,
-      placementId: resolved.placement.id,
-      path: resolved.targetRoot,
-      message:
-        "This external target links to a project-local source and will break if the project moves or is deleted.",
-    });
-  }
 }
 
 function buildMappings(
@@ -687,15 +667,6 @@ function compareMapping(left: PlannedFile, right: PlannedFile): number {
     compareText(left.skillName, right.skillName) ||
     compareText(left.targetPath, right.targetPath) ||
     compareText(left.sourcePath, right.sourcePath)
-  );
-}
-
-function compareNotice(left: PlanNotice, right: PlanNotice): number {
-  return (
-    compareText(left.harnessId ?? "", right.harnessId ?? "") ||
-    compareText(left.placementId ?? "", right.placementId ?? "") ||
-    compareText(left.path ?? "", right.path ?? "") ||
-    compareText(left.message, right.message)
   );
 }
 

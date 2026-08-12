@@ -557,8 +557,7 @@ otherwise. Each adapter declares its user paths; inspect the table's placement
 IDs or the harness specification before selecting one explicitly.
 
 If a project-local source is linked to a target outside the project,
-Distributor warns and uses an absolute source link. Moving or deleting the
-project will break that external target.
+Distributor uses an absolute source link.
 
 ## Ownership, conflicts, and stale targets
 
