@@ -27,6 +27,52 @@ has not been initialized, `import` runs interactive initialization first.
 
 `sync` links the skills from that source into the configured agent harnesses.
 
+## Run the local checkout as `distributor`
+
+Install Node.js 22 or newer and pnpm, then run these commands from your local
+Distributor checkout:
+
+```sh
+cd /path/to/distributor
+pnpm install --frozen-lockfile
+pnpm build
+npm link
+distributor --version
+```
+
+[`npm link`](https://docs.npmjs.com/cli/v11/commands/npm-link/) registers the
+checkout's compiled `dist/bin.js` as the global `distributor` command. Use pnpm
+to install dependencies and build; npm is only used here to link the command.
+You can then run it from the project you want to manage:
+
+```sh
+cd /path/to/your-project
+distributor init --yes
+distributor sync --dry-run
+```
+
+If your shell cannot find `distributor`, ensure npm's global binary directory
+is on your `PATH`. On Linux and macOS:
+
+```sh
+export PATH="$(npm prefix -g)/bin:$PATH"
+command -v distributor
+```
+
+Add the `export` line to your shell startup file, such as `~/.zshrc` or
+`~/.bashrc`, to keep it available in new terminals.
+
+After changing the source or pulling updates, run `pnpm build` from the
+Distributor checkout again. The command uses the rebuilt files through the
+existing link; you do not need to repeat `npm link`. If dependencies changed,
+run `pnpm install --frozen-lockfile` before rebuilding.
+
+To remove the global link:
+
+```sh
+npm unlink --global @sunnygg/distributor
+```
+
 ## Add your first skill
 
 Initialize a project with the defaults, add a skill, inspect the plan, and
