@@ -7,10 +7,7 @@ import type { RunImportResult } from "./import/run-import.js";
 import type { InitResult } from "./init/run-init.js";
 import type { RunRemoveResult } from "./remove/run-remove.js";
 import type { RunStatusResult } from "./status/run-status.js";
-import type {
-  HarnessSyncCounts,
-  RunSyncResult,
-} from "./sync/run-sync.js";
+import type { RunSyncResult } from "./sync/run-sync.js";
 
 type Colors = ReturnType<typeof picocolors.createColors>;
 
@@ -195,11 +192,22 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
     printSync(result) {
       writeOut(formatSyncHeading(result));
 
-      for (const harness of result.counts.harnesses) {
-        writeOut(formatHarnessSummary(result, harness));
+      const rows = syncSkillRows(result);
+      const changedNames = new Set(
+        rows.filter((row) => !row.unchanged).map((row) => row.skill),
+      );
+      const changed = rows.filter((row) => changedNames.has(row.skill));
+      const unchanged = rows.filter((row) => !changedNames.has(row.skill));
+      if (changed.length > 0) {
+        writeOut(
+          `\n${formatSyncSkillsTable("Skill changes", changed, result)}\n`,
+        );
+      } else {
+        writeOut("No skill changes.\n");
       }
+      writeOut(`\n${formatSyncSummaryTable(result)}\n`);
       writeOut(
-        `stale: ${result.counts.stale}, warnings: ${result.counts.warnings}, failures: ${result.counts.failures}\n`,
+        `Stale: ${result.counts.stale}, warnings: ${result.counts.warnings}, failures: ${result.counts.failures}\n`,
       );
 
       for (const warning of result.warnings) {
@@ -214,6 +222,11 @@ export function createOutput(options: OutputOptions = {}): CliOutput {
           colors.red(
             `Error: ${formatDiagnosticPath(failure.path, result.projectRoot)}: ${failure.message}\nAction: ${failure.correction}\n`,
           ),
+        );
+      }
+      if (unchanged.length > 0) {
+        writeOut(
+          `\n${formatSyncSkillsTable("Unchanged skills", unchanged, result)}\n`,
         );
       }
     },
@@ -292,29 +305,137 @@ function formatSyncHeading(result: RunSyncResult): string {
   return `Synced ${skills} ${skillLabel} (${files} ${fileLabel}) to ${harnesses} ${harnessLabel}.\n`;
 }
 
-function formatHarnessSummary(
-  result: RunSyncResult,
-  harness: HarnessSyncCounts,
-): string {
-  const satisfied = result.plan.satisfiedPlacements
-    .filter((placement) => placement.harnessId === harness.harnessId)
-    .map((placement) => displayPath(placement.sourceRoot, result.projectRoot))
-    .sort(compareText);
-  const operationText = result.dryRun
-    ? `${harness.operations.create} to create, ${harness.operations.update} to update, ${harness.operations.adopt} to adopt, ${harness.operations.skip} to skip`
-    : `${harness.operations.create} created, ${harness.operations.update} updated, ${harness.operations.adopt} adopted, ${harness.operations.skip} skipped`;
+interface SyncSkillRow {
+  readonly skill: string;
+  readonly harness: string;
+  readonly outcomes: Set<string>;
+  unchanged: boolean;
+}
 
-  if (satisfied.length > 0 && harness.operations.total === 0) {
-    return `${harness.harnessId}: satisfied at ${satisfied.join(", ")} (no links needed)\n`;
+function syncSkillRows(result: RunSyncResult): SyncSkillRow[] {
+  const rows = new Map<string, SyncSkillRow>();
+  const add = (
+    skill: string,
+    harness: string,
+    outcome: string,
+    unchanged: boolean,
+  ) => {
+    const key = JSON.stringify([skill, harness]);
+    const row = rows.get(key) ?? {
+      skill,
+      harness,
+      outcomes: new Set<string>(),
+      unchanged: true,
+    };
+    row.outcomes.add(outcome);
+    row.unchanged &&= unchanged;
+    rows.set(key, row);
+  };
+  const completed = new Map(
+    result.applyResult?.operations.map((entry) => [
+      entry.operation.targetPath,
+      entry.status,
+    ]),
+  );
+  const labels = {
+    create: "Created",
+    update: "Updated",
+    adopt: "Adopted",
+    skip: "Unchanged",
+    stale: "Stale (retained)",
+    conflict: "Conflict",
+  };
+  for (const operation of result.plan.operations) {
+    const status = completed.get(operation.targetPath);
+    const notApplied =
+      !result.dryRun &&
+      result.applyResult !== undefined &&
+      status === undefined;
+    const unchanged =
+      operation.kind === "skip" && status !== "failed" && !notApplied;
+    const outcome =
+      status === "failed"
+        ? "Failed"
+        : notApplied
+          ? "Not applied"
+          : result.dryRun && !unchanged && operation.kind !== "stale"
+            ? `Would ${operation.kind}`
+            : labels[operation.kind];
+    const skill =
+      operation.skillName === "<stale>"
+        ? formatDiagnosticPath(operation.sourcePath, result.sourceRoot)
+        : operation.skillName;
+    for (const attribution of operation.attributions) {
+      add(skill, attribution.harnessId, outcome, unchanged);
+    }
   }
+  for (const placement of result.plan.satisfiedPlacements) {
+    for (const skill of result.skillNames) {
+      add(skill, placement.harnessId, "Satisfied", true);
+    }
+  }
+  return [...rows.values()].sort(
+    (left, right) =>
+      compareText(left.skill, right.skill) ||
+      compareText(left.harness, right.harness),
+  );
+}
 
-  const satisfiedText =
-    satisfied.length === 0 ? "" : `; satisfied at ${satisfied.join(", ")}`;
-  const staleText =
-    harness.operations.stale === 0
-      ? ""
-      : `, ${harness.operations.stale} stale`;
-  return `${harness.harnessId}: ${operationText}${staleText}${satisfiedText}\n`;
+function formatSyncSkillsTable(
+  title: string,
+  rows: readonly SyncSkillRow[],
+  result: RunSyncResult,
+): string {
+  const harnessIds = result.counts.harnesses.map(
+    (harness) => harness.harnessId,
+  );
+  const skills = new Map<string, Map<string, string>>();
+  for (const row of rows) {
+    const harnesses = skills.get(row.skill) ?? new Map<string, string>();
+    harnesses.set(row.harness, [...row.outcomes].join(", "));
+    skills.set(row.skill, harnesses);
+  }
+  const table = new AsciiTable3(title)
+    .setHeading("Skill", ...harnessIds)
+    .addRowMatrix(
+      [...skills].map(([skill, harnesses]) => [
+        skill,
+        ...harnessIds.map((harnessId) => harnesses.get(harnessId) ?? "—"),
+      ]),
+    );
+  for (let index = 2; index <= harnessIds.length + 1; index += 1) {
+    table.setAlignCenter(index);
+  }
+  return table.toString();
+}
+
+function formatSyncSummaryTable(result: RunSyncResult): string {
+  const table = new AsciiTable3(
+    result.dryRun ? "Planned sync summary" : "Sync summary",
+  )
+    .setHeading(
+      "Harness",
+      ...(result.dryRun
+        ? ["To create", "To update", "To adopt", "To skip"]
+        : ["Created", "Updated", "Adopted", "Skipped"]),
+      "Stale",
+      "Failures",
+    )
+    .addRowMatrix(
+      result.counts.harnesses.map((harness) => [
+        harness.harnessId,
+        harness.operations.create,
+        harness.operations.update,
+        harness.operations.adopt,
+        harness.operations.skip,
+        harness.operations.stale,
+        harness.failures,
+      ]),
+    );
+  for (let index = 2; index <= 7; index += 1) {
+    table.setAlignRight(index);
+  }
+  return table.toString();
 }
 
 function compareText(left: string, right: string): number {

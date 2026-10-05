@@ -94,6 +94,7 @@ export interface RunSyncResult {
   readonly configPath: string;
   readonly projectRoot: string;
   readonly sourceRoot: string;
+  readonly skillNames: readonly string[];
   readonly plan: ReadOnlySyncPlan;
   readonly applyResult?: ApplySyncResult;
   readonly warnings: readonly PlanNotice[];
@@ -197,6 +198,7 @@ export async function runSync(
       configPath: config.configPath,
       projectRoot: config.projectRoot,
       sourceRoot: config.sourceRoot,
+      skillNames: Object.freeze(skills.skills.map((skill) => skill.name)),
       plan,
       warnings,
       failures,
@@ -237,6 +239,7 @@ export async function runSync(
     configPath: config.configPath,
     projectRoot: config.projectRoot,
     sourceRoot: config.sourceRoot,
+    skillNames: Object.freeze(skills.skills.map((skill) => skill.name)),
     plan,
     applyResult,
     warnings,

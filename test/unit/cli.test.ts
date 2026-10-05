@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  type CliRuntime,
-  runCli,
-} from "../../src/cli.js";
+import { type CliRuntime, runCli } from "../../src/cli.js";
 import { DistributorError } from "../../src/errors.js";
 import type { RunImportResult } from "../../src/import/run-import.js";
 import type { InitResult } from "../../src/init/run-init.js";
@@ -82,7 +79,9 @@ describe("Distributor CLI", () => {
         yes: true,
         isInteractive: false,
       });
-      expect(context.stdout()).toContain("Initialized Distributor at /project.");
+      expect(context.stdout()).toContain(
+        "Initialized Distributor at /project.",
+      );
       expect(context.stdout()).toContain("config: created");
     },
   );
@@ -122,12 +121,7 @@ describe("Distributor CLI", () => {
     const context = testContext();
 
     expect(
-      await context.run([
-        "sync",
-        "--harness",
-        "claude-code",
-        "--dry-run",
-      ]),
+      await context.run(["sync", "--harness", "claude-code", "--dry-run"]),
     ).toBe(0);
 
     expect(context.runSync).toHaveBeenCalledWith({
@@ -139,15 +133,82 @@ describe("Distributor CLI", () => {
       "Dry run: 1 skill (2 files) would sync to 2 harnesses.",
     );
     expect(context.stdout()).toContain(
-      "claude-code: 2 to create, 0 to update, 0 to adopt, 0 to skip",
+      "| claude-code |         2 |         0 |        0 |       0 |     0 |        0 |",
     );
-    expect(context.stdout()).toContain(
-      "codex: satisfied at .agents/skills (no links needed)",
-    );
-    expect(context.stdout()).toContain(
-      "stale: 0, warnings: 0, failures: 0",
-    );
+    expect(context.stdout()).toContain("Satisfied");
+    expect(context.stdout()).toContain("Stale: 0, warnings: 0, failures: 0");
     expect(context.stderr()).toBe("");
+  });
+
+  it.each([true, false])(
+    "lists skill changes before unchanged skills (dry run: %s)",
+    async (dryRun) => {
+      const base = syncResult({ dryRun });
+      const operation = (
+        skillName: string,
+        kind: "create" | "update" | "adopt" | "skip",
+      ) => ({
+        kind,
+        skillName,
+        sourcePath: `/project/.agents/skills/${skillName}`,
+        targetPath: `/project/.claude/skills/${skillName}`,
+        linkValue: `../../.agents/skills/${skillName}`,
+        attributions: [{ harnessId: "claude-code", placementId: "project" }],
+      });
+      const operations = [
+        operation("alpha", "skip"),
+        operation("beta", "create"),
+        operation("gamma", "update"),
+        operation("delta", "adopt"),
+      ];
+      const result = {
+        ...base,
+        skillNames: ["alpha", "beta", "gamma", "delta"],
+        plan: { ...base.plan, operations },
+      };
+      const context = testContext({ runSync: async () => result });
+
+      expect(await context.run(["sync"])).toBe(0);
+      const output = context.stdout();
+      expect(output).toContain(dryRun ? "Would create" : "Created");
+      expect(output).toContain(dryRun ? "Would update" : "Updated");
+      expect(output).toContain(dryRun ? "Would adopt" : "Adopted");
+      const changeStart = output.indexOf("Skill changes");
+      const unchangedStart = output.indexOf("Unchanged skills");
+      expect(changeStart).toBeGreaterThan(0);
+      expect(unchangedStart).toBeGreaterThan(changeStart);
+      expect(output.slice(changeStart, unchangedStart)).toContain("beta");
+      expect(output.slice(unchangedStart)).toContain("alpha");
+      expect(output.slice(unchangedStart)).toContain("Satisfied");
+    },
+  );
+
+  it("reports failed operations without claiming they were created", async () => {
+    const base = syncResult({ failed: true, dryRun: false });
+    const operation = {
+      kind: "create" as const,
+      skillName: "broken",
+      sourcePath: "/project/.agents/skills/broken",
+      targetPath: "/project/target",
+      linkValue: ".agents/skills/broken",
+      attributions: [{ harnessId: "claude-code", placementId: "project" }],
+    };
+    const result: RunSyncResult = {
+      ...base,
+      plan: { ...base.plan, operations: [operation] },
+      applyResult: {
+        operations: [{ operation, status: "failed", targetLinkMutated: false }],
+        failures: base.failures,
+        warnings: [],
+        nextState: { version: 1, entries: [] },
+        statePersisted: false,
+        stateWritten: false,
+      },
+    };
+    const context = testContext({ runSync: async () => result });
+    expect(await context.run(["sync"])).toBe(1);
+    expect(context.stdout()).toMatch(/broken\s+\|\s+Failed/);
+    expect(context.stderr()).toContain("link denied");
   });
 
   it("runs remove and reports managed-link cleanup", async () => {
@@ -244,9 +305,7 @@ describe("Distributor CLI", () => {
     } as const;
     const result: RunSyncResult = {
       ...base,
-      warnings: [
-        { path: "/project/notes.txt", message: "Ignored root file." },
-      ],
+      warnings: [{ path: "/project/notes.txt", message: "Ignored root file." }],
       counts: {
         ...base.counts,
         source: { skills: 0, files: 0 },
@@ -273,7 +332,7 @@ describe("Distributor CLI", () => {
     expect(context.stdout()).toContain(
       "No skills found in /project/.agents/skills. Add a skill directory containing SKILL.md.",
     );
-    expect(context.stdout()).toContain("1 stale");
+    expect(context.stdout()).toContain("Stale: 1");
     expect(context.stdout()).toContain("warnings: 1");
     expect(context.stdout()).toContain(
       "Warning: notes.txt: Ignored root file.",
@@ -565,6 +624,7 @@ function syncResult(
     configPath: "/project/distributor.config.json",
     projectRoot: "/project",
     sourceRoot: "/project/.agents/skills",
+    skillNames: ["alpha"],
     plan: {
       applicable: true,
       sourceRootIdentity: {
