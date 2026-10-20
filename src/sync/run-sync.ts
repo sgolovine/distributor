@@ -151,7 +151,9 @@ export async function runSync(
   };
   const discovered = await runtime.discoverConfig(cwd);
   const config = await runtime.loadProjectConfig(discovered, configOptions);
-  const skills = await runtime.discoverSkills(config.sourceRoot);
+  const skills = await runtime.discoverSkills(config.sourceRoot, {
+    projectRoot: config.projectRoot,
+  });
   const resolution = runtime.resolvePlacements(config, skills, {
     ...(options.harness === undefined ? {} : { harness: options.harness }),
     ...(options.homeDirectory === undefined
