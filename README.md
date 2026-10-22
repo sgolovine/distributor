@@ -107,6 +107,22 @@ top-level helper file is linked as a file. Because skill directories are linked
 intact, optional content such as `agents/openai.yaml` (or `agents/openai.yml`)
 remains visible through every linked skill folder.
 
+Nested file and directory symlinks inside skills are supported by `status` and
+`sync`. Their resolved targets must stay within the project root (the directory
+containing the Distributor config) when the source is inside that project. For
+example, with `source: "skills"`, `skills/factory-resolve/shared -> ../../references`
+can share files from the project's `references` directory. If the source is
+outside the project, targets must stay within the source root instead. This
+policy also applies with `scope: "global"`.
+
+Broken links, directory cycles, and links that resolve outside the allowed root
+cause that skill to be skipped with a warning. Discovery preserves paths through
+the link, such as `shared/guide.md`; sync keeps the skill directory and its
+nested links intact. The source root, top-level skill and helper directories,
+and each skill's root `SKILL.md` must still be real directories or files. Nested
+links in helper directories remain unsupported. `import` continues to skip
+skills containing symlinks because shared targets are not copied with a skill.
+
 ## Command details
 
 ```sh

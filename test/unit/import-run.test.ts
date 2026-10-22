@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -181,6 +181,35 @@ describe("runImport", () => {
         expect.objectContaining({
           path: invalid,
           message: expect.stringContaining("Ignored invalid skill"),
+        }),
+      ]);
+    });
+  });
+
+  it("keeps skills with nested symlinks out of import candidates", async () => {
+    await useFixture(async (root) => {
+      await writeConfig(root, "canonical/skills");
+      const harnessRoot = join(root, ".claude", "skills");
+      await writeSkill(harnessRoot, "linked");
+      await mkdir(join(harnessRoot, ".references"));
+      await writeFile(join(harnessRoot, ".references", "guide.md"), "shared");
+      await symlink(
+        "../.references",
+        join(harnessRoot, "linked", "shared"),
+        "dir",
+      );
+      const result = await runImport({
+        cwd: root,
+        homeDirectory: join(root, "home"),
+        environment: {},
+        isInteractive: true,
+        prompt: async () => [],
+      });
+      expect(result.candidates).toEqual([]);
+      expect(result.warnings).toEqual([
+        expect.objectContaining({
+          path: join(harnessRoot, "linked"),
+          message: expect.stringContaining("symbolic link"),
         }),
       ]);
     });

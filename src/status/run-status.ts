@@ -92,7 +92,9 @@ export async function runStatus(
       ? {}
       : { pathStyle: options.pathStyle }),
   });
-  const skills = await runtime.discoverSkills(config.sourceRoot);
+  const skills = await runtime.discoverSkills(config.sourceRoot, {
+    projectRoot: config.projectRoot,
+  });
   const resolution = runtime.resolvePlacements(config, skills, {
     ...(options.homeDirectory === undefined
       ? {}

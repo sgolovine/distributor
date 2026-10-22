@@ -1,6 +1,6 @@
 import { constants, type Stats } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { isMap, isScalar, parseDocument } from "yaml";
 
@@ -77,7 +77,7 @@ export class SkillValidationError extends DistributorError {
         ? {}
         : { context: { sourcePath: problems[0].skillPath ?? problems[0].path } }),
       correction:
-        "Correct every reported source problem without replacing content with symlinks, then rerun Distributor.",
+        "Correct every reported source problem, then rerun Distributor.",
       issues: problems.map((problem) => ({
         message: problem.message,
         path: problem.path,
@@ -90,8 +90,14 @@ export class SkillValidationError extends DistributorError {
   }
 }
 
+interface SkillDiscoveryOptions {
+  projectRoot?: string;
+  allowNestedSymlinks?: boolean;
+}
+
 export async function discoverSkills(
   sourcePath: string,
+  options: SkillDiscoveryOptions = {},
 ): Promise<SkillDiscoveryResult> {
   const sourceRoot = resolve(sourcePath);
   const rootStats = await inspectSourceRoot(sourceRoot);
@@ -110,6 +116,7 @@ export async function discoverSkills(
     rootStats,
   );
 
+  const allowedRootRealPath = await skillLinkBoundary(sourceRootIdentity, options);
   const problems: SkillValidationProblem[] = [];
   const warnings: SkillDiscoveryWarning[] = [];
   const skills: SourceSkill[] = [];
@@ -136,6 +143,7 @@ export async function discoverSkills(
           entryPath,
           name,
           skillProblems,
+          options.allowNestedSymlinks === false ? undefined : allowedRootRealPath,
         );
         if (skill === undefined) {
           warnings.push(invalidSkillWarning(entryPath, name, skillProblems));
@@ -185,6 +193,7 @@ export async function discoverSkills(
 export async function discoverSkill(
   sourcePath: string,
   directoryName: string,
+  options: SkillDiscoveryOptions = {},
 ): Promise<SourceSkill> {
   const sourceRoot = resolve(sourcePath);
   const rootStats = await inspectSourceRoot(sourceRoot);
@@ -200,6 +209,7 @@ export async function discoverSkill(
     sourceRoot,
     rootStats,
   );
+  const allowedRootRealPath = await skillLinkBoundary(sourceRootIdentity, options);
   const skillPath = join(sourceRoot, directoryName);
   const problems: SkillValidationProblem[] = [];
   const stats = await inspectEntry(skillPath, problems, skillPath);
@@ -217,6 +227,7 @@ export async function discoverSkill(
       skillPath,
       directoryName,
       problems,
+      options.allowNestedSymlinks === false ? undefined : allowedRootRealPath,
     );
   }
 
@@ -233,6 +244,27 @@ export async function discoverSkill(
 
   await requireSourceRootIdentity(sourceRoot, sourceRootIdentity);
   return skill;
+}
+
+async function skillLinkBoundary(
+  sourceRoot: SourceRootIdentity,
+  options: SkillDiscoveryOptions,
+): Promise<string> {
+  if (options.projectRoot === undefined) {
+    return sourceRoot.realPath;
+  }
+  const projectRoot = await realpath(options.projectRoot);
+  return isWithinDirectory(relative(projectRoot, sourceRoot.realPath))
+    ? projectRoot
+    : sourceRoot.realPath;
+}
+
+function isWithinDirectory(relativePath: string): boolean {
+  return (
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${sep}`) &&
+    !isAbsolute(relativePath)
+  );
 }
 
 async function inspectSourceRoot(sourceRoot: string): Promise<Stats> {
@@ -305,6 +337,7 @@ async function inspectSkill(
   skillPath: string,
   directoryName: string,
   problems: SkillValidationProblem[],
+  allowedRootRealPath: string | undefined,
 ): Promise<SourceSkill | undefined> {
   const firstProblem = problems.length;
   const files: SourceSkillFile[] = [];
@@ -315,6 +348,9 @@ async function inspectSkill(
     skillPath,
     files,
     problems,
+    allowedRootRealPath === undefined
+      ? undefined
+      : { allowedRootRealPath, ancestors: new Set() },
   );
   files.sort((left, right) =>
     compareText(left.sourceRelativePath, right.sourceRelativePath),
@@ -372,14 +408,58 @@ async function collectSourceDirectoryFiles(
   directoryPath: string,
   files: SourceSkillFile[],
   problems: SkillValidationProblem[],
+  links?: { allowedRootRealPath: string; ancestors: Set<string> },
 ): Promise<void> {
+  if (links !== undefined) {
+    const directoryRealPath = await resolveSkillEntry(
+      directoryPath,
+      skillPath,
+      links.allowedRootRealPath,
+      problems,
+    );
+    if (directoryRealPath === undefined) {
+      return;
+    }
+    if (links.ancestors.has(directoryRealPath)) {
+      problems.push({
+        path: directoryPath,
+        skillPath,
+        message: "Symbolic link creates a directory cycle.",
+      });
+      return;
+    }
+    links = {
+      ...links,
+      ancestors: new Set([...links.ancestors, directoryRealPath]),
+    };
+  }
   const entries = await readDirectory(directoryPath, problems, skillPath);
 
   for (const name of entries) {
     const entryPath = join(directoryPath, name);
-    const stats = await inspectEntry(entryPath, problems, skillPath);
+    let stats = await inspectEntry(entryPath, problems, skillPath);
     if (stats === undefined) {
       continue;
+    }
+
+    if (
+      stats.isSymbolicLink() &&
+      links !== undefined &&
+      entryPath !== join(skillPath, "SKILL.md")
+    ) {
+      const targetPath = await resolveSkillEntry(
+        entryPath,
+        skillPath,
+        links.allowedRootRealPath,
+        problems,
+      );
+      if (targetPath === undefined) {
+        continue;
+      }
+      stats = await inspectEntry(targetPath, problems, skillPath);
+      if (stats === undefined) {
+        continue;
+      }
     }
 
     if (stats.isDirectory()) {
@@ -389,6 +469,7 @@ async function collectSourceDirectoryFiles(
         entryPath,
         files,
         problems,
+        links,
       );
       continue;
     }
@@ -407,6 +488,34 @@ async function collectSourceDirectoryFiles(
       skillPath,
       message: `Source directories may contain only regular files and directories; found ${describeNode(stats)}.`,
     });
+  }
+}
+
+async function resolveSkillEntry(
+  entryPath: string,
+  skillPath: string,
+  allowedRootRealPath: string,
+  problems: SkillValidationProblem[],
+): Promise<string | undefined> {
+  try {
+    const targetPath = await realpath(entryPath);
+    const targetRelativePath = relative(allowedRootRealPath, targetPath);
+    if (!isWithinDirectory(targetRelativePath)) {
+      problems.push({
+        path: entryPath,
+        skillPath,
+        message: `Symbolic link target must stay within the allowed root ${JSON.stringify(allowedRootRealPath)}.`,
+      });
+      return undefined;
+    }
+    return targetPath;
+  } catch (error) {
+    problems.push({
+      path: entryPath,
+      skillPath,
+      message: `Unable to resolve source entry (broken or cyclic symbolic link): ${errorMessage(error)}.`,
+    });
+    return undefined;
   }
 }
 

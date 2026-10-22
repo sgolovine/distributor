@@ -215,7 +215,9 @@ export async function scanHarnessSkills(options: {
       }
 
       try {
-        const skill = await discoverSkill(root.path, entry.name);
+        const skill = await discoverSkill(root.path, entry.name, {
+          allowNestedSymlinks: false,
+        });
         candidates.push({
           id: join(root.path, entry.name),
           name: skill.name,
@@ -470,7 +472,9 @@ async function preflightImport(
   }
 
   for (const candidate of candidates) {
-    await discoverSkill(candidate.sourceRoot, candidate.name);
+    await discoverSkill(candidate.sourceRoot, candidate.name, {
+      allowNestedSymlinks: false,
+    });
     const destinationPath = join(sourceRoot, candidate.name);
     try {
       await lstat(destinationPath);
